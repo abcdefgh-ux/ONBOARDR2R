@@ -1,0 +1,6 @@
+{
+  "name": "Ring2Rev Portal",
+  "description": "YAAN & Co. Ring2Rev Onboarding Portal for business setup, conversational AI configuration, tool integrations, automated handoffs, and 14-day build plan tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
