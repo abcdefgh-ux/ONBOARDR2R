@@ -58,6 +58,9 @@ export const INITIAL_STATE: OnboardingState = {
   autoBookingEnabled: true,
   customAutomationNotes: '',
 
+  adminCopyEmail: 'shayanalizafar@yahoo.com',
+  additionalCopyEmails: '',
+
   currentStep: 1,
   completedSteps: [],
   isSubmitted: false,

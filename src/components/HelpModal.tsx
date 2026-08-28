@@ -55,10 +55,10 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             <p className="text-xs text-white/50 font-light">
               Need immediate architectural clarification? Contact Shayan at{' '}
               <a
-                href="mailto:shayan@yaanandco.com"
+                href="mailto:shayanalizafar@yahoo.com"
                 className="text-[#c5a47e] underline hover:text-white"
               >
-                shayan@yaanandco.com
+                shayanalizafar@yahoo.com
               </a>
             </p>
           </div>

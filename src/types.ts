@@ -14,6 +14,14 @@ export interface UploadedDoc {
   uploadedAt: Date;
 }
 
+export interface SubmissionResult {
+  submissionId: string;
+  submittedAt: string;
+  recipientEmails: string[];
+  webhookSent: boolean;
+  summaryText: string;
+}
+
 export interface OnboardingState {
   // Step 1: Basic Business Info
   businessName: string;
@@ -49,9 +57,14 @@ export interface OnboardingState {
   autoBookingEnabled: boolean;
   customAutomationNotes: string;
 
+  // Response Copy Distribution
+  adminCopyEmail?: string;
+  additionalCopyEmails?: string;
+
   // Metadata
   currentStep: number; // 1 to 5
   completedSteps: number[]; // e.g. [1, 2]
   isSubmitted: boolean;
   lastSavedAt: string | null;
+  submissionResult?: SubmissionResult;
 }

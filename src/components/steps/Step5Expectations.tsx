@@ -10,12 +10,16 @@ interface Step5Props {
   formData: OnboardingState;
   onBack: () => void;
   onFinish: () => void;
+  onChange?: (field: keyof OnboardingState, value: any) => void;
+  isSubmitting?: boolean;
 }
 
 export const Step5Expectations: React.FC<Step5Props> = ({
   formData,
   onBack,
   onFinish,
+  onChange,
+  isSubmitting = false,
 }) => {
   return (
     <div className="max-w-6xl w-full mx-auto pb-32">
@@ -160,13 +164,65 @@ export const Step5Expectations: React.FC<Step5Props> = ({
         </div>
       </div>
 
+      {/* Automated Response Copy Distribution Notice */}
+      <div className="mt-8 glass-panel rounded-2xl p-6 border-white/5 bg-[#080808]">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-[#c5a47e] shrink-0 mt-0.5">
+              <span className="material-symbols-outlined text-[20px]">outgoing_mail</span>
+            </div>
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white">
+                Automated Response Copy Distribution
+              </h3>
+              <p className="text-xs text-white/50 mt-1 font-light leading-relaxed">
+                Upon submitting, a complete timestamped transcript of all 5 onboarding steps is automatically recorded and emailed to:
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="px-2.5 py-1 rounded-lg bg-black border border-white/10 text-white font-mono text-[11px] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#c5a47e]"></span>
+                  shayanalizafar@yahoo.com (Admin Lead)
+                </span>
+                {formData.primaryContactEmail && (
+                  <span className="px-2.5 py-1 rounded-lg bg-black border border-white/10 text-white font-mono text-[11px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    {formData.primaryContactEmail} (Submitter)
+                  </span>
+                )}
+                {formData.retellEmail && formData.retellEmail !== formData.primaryContactEmail && (
+                  <span className="px-2.5 py-1 rounded-lg bg-black border border-white/10 text-white font-mono text-[11px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                    {formData.retellEmail} (Retell Account)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          {onChange && (
+            <div className="md:w-72">
+              <label className="block text-[9px] uppercase tracking-[0.2em] text-[#c5a47e] mb-1 font-medium">
+                Add CC / Extra Recipient
+              </label>
+              <input
+                type="email"
+                value={formData.additionalCopyEmails || ''}
+                onChange={(e) => onChange('additionalCopyEmails', e.target.value)}
+                placeholder="colleague@company.com"
+                className="w-full rounded-xl glass-input p-2.5 text-white text-xs font-mono"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Bottom Action Bar */}
-      <div className="mt-12 flex items-center justify-between pt-8 border-t border-white/5">
+      <div className="mt-10 flex items-center justify-between pt-8 border-t border-white/5">
         <button
           id="step5-back-btn"
           type="button"
+          disabled={isSubmitting}
           onClick={onBack}
-          className="btn-secondary px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2"
+          className="btn-secondary px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2 disabled:opacity-50"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
           Back
@@ -175,11 +231,21 @@ export const Step5Expectations: React.FC<Step5Props> = ({
         <button
           id="step5-finish-btn"
           type="button"
+          disabled={isSubmitting}
           onClick={onFinish}
-          className="btn-gold px-9 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2 shadow-xl shadow-black/50"
+          className="btn-gold px-9 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2 shadow-xl shadow-black/50 disabled:opacity-75"
         >
-          Complete Deployment
-          <span className="material-symbols-outlined text-[18px]">done_all</span>
+          {isSubmitting ? (
+            <>
+              <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+              Dispatching Copy &amp; Submitting...
+            </>
+          ) : (
+            <>
+              Complete &amp; Send Copy
+              <span className="material-symbols-outlined text-[18px]">done_all</span>
+            </>
+          )}
         </button>
       </div>
     </div>
