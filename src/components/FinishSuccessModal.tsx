@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { OnboardingState } from '../types';
+import { getCachedAccessToken, syncFormDataToGoogleSheet, signInWithGoogle } from '../services/googleSheets';
 
 interface FinishSuccessModalProps {
   isOpen: boolean;
@@ -17,6 +18,11 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
   onOpenSubmissions,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState<string | undefined>(
+    formData.submissionResult?.spreadsheetUrl || formData.spreadsheetUrl
+  );
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -57,6 +63,32 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
     URL.revokeObjectURL(url);
   };
 
+  const handleSyncToSheets = async () => {
+    setIsManualSyncing(true);
+    setSyncNotice(null);
+    try {
+      let token = getCachedAccessToken();
+      if (!token) {
+        const authRes = await signInWithGoogle();
+        token = authRes.accessToken;
+      }
+      const syncRes = await syncFormDataToGoogleSheet(
+        token,
+        formData,
+        subResult?.submissionId || `R2R-${Date.now().toString(36).toUpperCase()}`,
+        subResult?.submittedAt || new Date().toISOString(),
+        recipientList
+      );
+      setSheetUrl(syncRes.spreadsheetUrl);
+      setSyncNotice('✓ Successfully synced to Google Sheets!');
+    } catch (err: any) {
+      console.error(err);
+      setSyncNotice(`Notice: ${err?.message || 'Could not sync to Sheets'}`);
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
   const emailSubject = encodeURIComponent(`Copy of Ring2Rev Responses - ${formData.businessName || 'Onboarding'}`);
   const emailBody = encodeURIComponent(summaryText);
   const mailtoLink = `mailto:${recipientList.join(',')}?subject=${emailSubject}&body=${emailBody}`;
@@ -78,18 +110,62 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
         </div>
 
         <h3 className="text-2xl font-light text-white mb-2 tracking-tight">
-          Form Submitted &amp; Copy Dispatched
+          Form Submitted &amp; Live Synchronized
         </h3>
 
         <p className="text-xs text-white/50 leading-relaxed mb-5 font-light">
           Your onboarding specifications for{' '}
-          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your enterprise'}</strong> have been saved to the portal server and response copies have been generated.
+          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your enterprise'}</strong> have been saved to the portal server, response copies were generated, and records are mapped to Google Sheets.
         </p>
+
+        {/* Google Sheets Destination Card */}
+        <div className="bg-[#060606] border border-[#0f9d58]/40 rounded-2xl p-4 mb-4 text-left relative overflow-hidden">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#0f9d58] animate-pulse"></span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#34A853]">
+                Google Sheets Live Sync
+              </span>
+            </div>
+            {sheetUrl && (
+              <a
+                href={sheetUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] font-bold uppercase tracking-wider text-[#c5a47e] hover:text-white flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5"
+              >
+                <span>View In Sheets</span>
+                <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+              </a>
+            )}
+          </div>
+          <p className="text-xs text-white/70 font-light mb-2">
+            Row data mapped with business info, scenarios breakdown, webhook URLs, and escalation routing.
+          </p>
+          {!sheetUrl ? (
+            <button
+              type="button"
+              onClick={handleSyncToSheets}
+              disabled={isManualSyncing}
+              className="text-xs text-black bg-white hover:bg-neutral-200 px-3 py-1.5 rounded-lg font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[16px]">sync</span>
+              {isManualSyncing ? 'Pushing to Sheets...' : 'Sync to Google Sheets Now'}
+            </button>
+          ) : (
+            <div className="text-[11px] font-mono text-white/50 truncate">
+              {sheetUrl}
+            </div>
+          )}
+          {syncNotice && (
+            <div className="mt-2 text-[11px] font-mono text-[#c5a47e]">{syncNotice}</div>
+          )}
+        </div>
 
         {/* Copy Delivery Confirmation Banner */}
         <div className="bg-[#050505] border border-emerald-500/30 rounded-2xl p-4 mb-5 text-left">
           <div className="flex items-center gap-2.5 mb-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
               Response Copies Dispatched To:
             </span>
@@ -204,3 +280,4 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
     </div>
   );
 };
+

@@ -20,6 +20,9 @@ export interface SubmissionResult {
   recipientEmails: string[];
   webhookSent: boolean;
   summaryText: string;
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+  sheetSynced?: boolean;
 }
 
 export interface OnboardingState {
@@ -60,6 +63,13 @@ export interface OnboardingState {
   // Response Copy Distribution
   adminCopyEmail?: string;
   additionalCopyEmails?: string;
+
+  // Google Sheets Sync
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+  googleSyncEnabled?: boolean;
+  googleSyncedAt?: string;
+  googleAccountEmail?: string;
 
   // Metadata
   currentStep: number; // 1 to 5

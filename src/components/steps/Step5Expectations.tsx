@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { OnboardingState } from '../../types';
 import {
   BUILD_TIMELINE,
   CLIPBOARD_IMAGE_URL,
   GUIDE_AVATAR_URL,
 } from '../../data/initialData';
+import { GoogleSignInButton } from '../GoogleSignInButton';
+import {
+  signInWithGoogle,
+  createRing2RevSpreadsheet,
+} from '../../services/googleSheets';
 
 interface Step5Props {
   formData: OnboardingState;
@@ -12,6 +17,8 @@ interface Step5Props {
   onFinish: () => void;
   onChange?: (field: keyof OnboardingState, value: any) => void;
   isSubmitting?: boolean;
+  googleUserEmail?: string | null;
+  onGoogleSignInSuccess?: (email: string, token: string) => void;
 }
 
 export const Step5Expectations: React.FC<Step5Props> = ({
@@ -20,7 +27,39 @@ export const Step5Expectations: React.FC<Step5Props> = ({
   onFinish,
   onChange,
   isSubmitting = false,
+  googleUserEmail,
+  onGoogleSignInSuccess,
 }) => {
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const res = await signInWithGoogle();
+      if (res && res.user && onChange) {
+        const email = res.user.email || 'Connected Google Account';
+        onChange('googleAccountEmail', email);
+        onChange('googleSyncEnabled', true);
+        if (onGoogleSignInSuccess) {
+          onGoogleSignInSuccess(email, res.accessToken);
+        }
+        if (!formData.spreadsheetId) {
+          try {
+            const sheet = await createRing2RevSpreadsheet(res.accessToken);
+            onChange('spreadsheetId', sheet.spreadsheetId);
+            onChange('spreadsheetUrl', sheet.spreadsheetUrl);
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl w-full mx-auto pb-32">
       <header className="mb-10">
@@ -31,7 +70,7 @@ export const Step5Expectations: React.FC<Step5Props> = ({
           Deployment Roadmap &amp; Delivery
         </h2>
         <p className="text-sm text-white/50 font-light tracking-wide max-w-2xl">
-          Specification complete. Below is the operational schedule for solution synthesis, validation testing, and production rollout.
+          Specification complete. Below is the operational schedule for solution synthesis, Google Sheets live sync, and production rollout.
         </p>
       </header>
 
@@ -50,7 +89,7 @@ export const Step5Expectations: React.FC<Step5Props> = ({
             </div>
 
             <p className="text-xs text-white/50 leading-relaxed mb-6 font-light">
-              Thank you{formData.primaryContactName ? `, ${formData.primaryContactName}` : ''}. We have securely catalogued your operational guidelines, voice prompts, integration webhooks, and safety rails. Synthesis begins immediately.
+              Thank you{formData.primaryContactName ? `, ${formData.primaryContactName}` : ''}. We have securely catalogued your operational guidelines, voice prompts, integration webhooks, and safety rails.
             </p>
           </div>
 
@@ -139,16 +178,16 @@ export const Step5Expectations: React.FC<Step5Props> = ({
                   }}
                 />
               </div>
-              <h4 className="text-base font-light text-white mb-0.5">Shayan</h4>
+              <h4 className="text-base font-light text-white mb-0.5">Shayan Ali Zafar</h4>
               <p className="text-[9px] font-bold text-[#c5a47e] uppercase tracking-[0.2em] mb-3">
                 Solutions Architecture Lead
               </p>
               <a
-                href="mailto:shayan@yaanandco.com"
+                href="mailto:shayanalizafar@yahoo.com"
                 className="flex items-center gap-1.5 text-xs text-white/50 hover:text-[#c5a47e] transition-colors"
               >
                 <span className="material-symbols-outlined text-[14px]">mail</span>
-                shayan@yaanandco.com
+                shayanalizafar@yahoo.com
               </a>
             </div>
           </div>
@@ -158,14 +197,64 @@ export const Step5Expectations: React.FC<Step5Props> = ({
               <span className="material-symbols-outlined text-[#c5a47e] text-[16px] mt-0.5 shrink-0">
                 info
               </span>
-              <span>Keep an eye on your inbox. Shayan will dispatch initial pipeline telemetry shortly.</span>
+              <span>Keep an eye on your inbox and Google Sheet. Shayan will dispatch initial pipeline telemetry shortly.</span>
             </p>
           </div>
         </div>
       </div>
 
-      {/* Automated Response Copy Distribution Notice */}
+      {/* Google Sheets Destination & Sync Status Banner */}
       <div className="mt-8 glass-panel rounded-2xl p-6 border-white/5 bg-[#080808]">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#0f9d58]/10 border border-[#0f9d58]/30 flex items-center justify-center text-[#0f9d58] shrink-0 mt-0.5">
+              <span className="material-symbols-outlined text-[22px]">table_chart</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white">
+                  Google Sheets Automatic Update
+                </h3>
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {formData.googleAccountEmail || googleUserEmail ? 'Connected' : 'Live Bridge Ready'}
+                </span>
+              </div>
+              <p className="text-xs text-white/50 mt-1 font-light leading-relaxed">
+                All business specifications and scenario routing details are synchronized into your connected Google Sheet upon submission.
+              </p>
+              {formData.spreadsheetUrl && (
+                <a
+                  href={formData.spreadsheetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-[#c5a47e] hover:text-white underline inline-flex items-center gap-1 mt-1 font-mono"
+                >
+                  <span>Open Synced Google Sheet</span>
+                  <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                </a>
+              )}
+            </div>
+          </div>
+
+          <div>
+            {!formData.googleAccountEmail && !googleUserEmail ? (
+              <GoogleSignInButton
+                onClick={handleConnectGoogle}
+                isLoading={isConnectingGoogle}
+                variant="compact"
+              />
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono bg-black/60 px-3 py-2 rounded-xl border border-white/5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>Auto-sync enabled ({formData.googleAccountEmail || googleUserEmail})</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Automated Response Copy Distribution Notice */}
+      <div className="mt-6 glass-panel rounded-2xl p-6 border-white/5 bg-[#080808]">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-[#c5a47e] shrink-0 mt-0.5">
@@ -238,11 +327,11 @@ export const Step5Expectations: React.FC<Step5Props> = ({
           {isSubmitting ? (
             <>
               <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-              Dispatching Copy &amp; Submitting...
+              Syncing to Sheets &amp; Submitting...
             </>
           ) : (
             <>
-              Complete &amp; Send Copy
+              Complete &amp; Update Sheets
               <span className="material-symbols-outlined text-[18px]">done_all</span>
             </>
           )}
