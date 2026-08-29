@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { downloadOnboardingPDF } from '../utils/pdfGenerator';
 
 interface SubmissionItem {
   id: string;
@@ -34,9 +35,10 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [webhookResult, setWebhookResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedCsv, setCopiedCsv] = useState(false);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
 
-  const MASTER_PASSWORD = 'ring2rev2026';
+  const MASTER_PASSWORD = 'Qwerty';
 
   useEffect(() => {
     if (isOpen && isAuthenticated) {
@@ -54,9 +56,8 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     setIsVerifying(true);
 
     const entered = passwordInput.trim();
-    const validCodes = [MASTER_PASSWORD, 'admin2026', 'yaan2026', 'shayan2026', 'ring2rev', 'admin123'];
 
-    if (validCodes.includes(entered)) {
+    if (entered === 'Qwerty' || entered === 'qwerty') {
       sessionStorage.setItem('ring2rev_admin_auth', 'true');
       setIsAuthenticated(true);
       setIsVerifying(false);
@@ -96,20 +97,53 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
 
   const fetchSubmissions = async () => {
     setLoading(true);
+    let serverList: SubmissionItem[] = [];
+
     try {
       const res = await fetch('/api/submissions');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.submissions)) {
-        setSubmissions(data.submissions);
-        if (data.submissions.length > 0 && !selectedSubmission) {
-          setSelectedSubmission(data.submissions[0]);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.submissions)) {
+          serverList = data.submissions;
         }
       }
     } catch (err) {
       console.warn('Submissions load warning:', err);
-    } finally {
-      setLoading(false);
     }
+
+    // Also merge from localStorage for instantaneous client redundancy
+    let localList: SubmissionItem[] = [];
+    try {
+      const localRaw = localStorage.getItem('ring2rev_submissions_history');
+      if (localRaw) {
+        localList = JSON.parse(localRaw);
+      }
+    } catch (localErr) {
+      console.warn('Local submissions parse error:', localErr);
+    }
+
+    // Combine both sources by ID
+    const mergedMap = new Map<string, SubmissionItem>();
+    serverList.forEach((item) => {
+      if (item && item.id) mergedMap.set(item.id, item);
+    });
+    localList.forEach((item) => {
+      if (item && item.id && !mergedMap.has(item.id)) {
+        mergedMap.set(item.id, item);
+      }
+    });
+
+    const combined = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+    );
+
+    setSubmissions(combined);
+    if (combined.length > 0) {
+      setSelectedSubmission((prev) => (prev ? combined.find((s) => s.id === prev.id) || combined[0] : combined[0]));
+    } else {
+      setSelectedSubmission(null);
+    }
+    setLoading(false);
   };
 
   const escapeCsvVal = (val: any): string => {
@@ -465,13 +499,6 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   )}
                 </button>
               </form>
-
-              {/* Owner password hint */}
-              <div className="mt-6 pt-5 border-t border-white/5 text-center">
-                <p className="text-[11px] text-white/40 font-mono">
-                  Master Password: <span className="text-[#c5a47e] font-bold select-all">{MASTER_PASSWORD}</span>
-                </p>
-              </div>
             </div>
           </div>
         ) : (
@@ -584,6 +611,31 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selectedSubmission) return;
+                        setDownloadingPdfId(selectedSubmission.id);
+                        try {
+                          downloadOnboardingPDF({
+                            formData: selectedSubmission.data || {},
+                            submissionId: selectedSubmission.id,
+                            submittedAt: selectedSubmission.submittedAt,
+                          });
+                        } catch (err) {
+                          console.error('PDF export error:', err);
+                        } finally {
+                          setTimeout(() => setDownloadingPdfId(null), 1500);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#c5a47e]/15 hover:bg-[#c5a47e]/25 text-[#c5a47e] hover:text-white text-xs flex items-center gap-1.5 border border-[#c5a47e]/30 transition-all font-medium"
+                      title="Download formatted PDF record"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {downloadingPdfId === selectedSubmission.id ? 'check' : 'picture_as_pdf'}
+                      </span>
+                      {downloadingPdfId === selectedSubmission.id ? 'Downloaded' : 'PDF Record'}
+                    </button>
                     <button
                       type="button"
                       onClick={handleCopy}

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { OnboardingState } from '../types';
+import { downloadOnboardingPDF } from '../utils/pdfGenerator';
 
 interface FinishSuccessModalProps {
   isOpen: boolean;
@@ -15,13 +16,33 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
   formData,
   onRestart,
 }) => {
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfDownloaded, setPdfDownloaded] = useState(false);
+
   if (!isOpen) return null;
 
   const subResult = formData.submissionResult;
 
+  const handleDownloadPdf = () => {
+    setIsGeneratingPdf(true);
+    try {
+      downloadOnboardingPDF({
+        formData,
+        submissionId: subResult?.submissionId,
+        submittedAt: subResult?.submittedAt,
+      });
+      setPdfDownloaded(true);
+      setTimeout(() => setPdfDownloaded(false), 4000);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg">
-      <div className="glass-panel w-full max-w-md rounded-3xl p-8 bg-[#0a0a0a] shadow-2xl border border-[#c5a47e]/30 text-center relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg animate-fadeIn">
+      <div className="glass-panel w-full max-w-lg rounded-3xl p-6 sm:p-8 bg-[#0a0a0a] shadow-2xl border border-[#c5a47e]/30 text-center relative overflow-hidden">
         {/* Glow backdrop */}
         <div className="absolute -top-16 -left-16 w-48 h-48 bg-[#c5a47e]/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -40,28 +61,71 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
         </h3>
 
         <p className="text-xs text-white/50 leading-relaxed mb-5 font-light">
-          Your onboarding details for{' '}
-          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your business'}</strong> have been received.
+          Your onboarding specifications for{' '}
+          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your business'}</strong> have been securely recorded and queued for deployment.
         </p>
 
         {/* Submission reference */}
         {subResult?.submissionId && (
-          <div className="bg-[#050505] border border-white/10 rounded-2xl p-3.5 mb-5 text-left flex justify-between items-center">
+          <div className="bg-[#050505] border border-white/10 rounded-2xl p-3.5 mb-4 text-left flex justify-between items-center">
             <div>
               <span className="text-[9px] uppercase tracking-[0.2em] text-white/40 block">Submission Reference</span>
-              <span className="text-sm font-mono text-white font-medium">{subResult.submissionId}</span>
+              <span className="text-sm font-mono text-[#c5a47e] font-medium">{subResult.submissionId}</span>
             </div>
-            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono rounded-lg border border-emerald-500/20">
-              ✓ Logged
+            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono rounded-lg border border-emerald-500/20 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              Logged &amp; Synced
             </span>
           </div>
         )}
+
+        {/* Primary Download PDF Action Card */}
+        <div className="bg-gradient-to-r from-[#12100e] via-[#1a1714] to-[#12100e] border border-[#c5a47e]/40 rounded-2xl p-4 mb-4 text-left flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#c5a47e]/15 border border-[#c5a47e]/30 flex items-center justify-center text-[#c5a47e] shrink-0">
+              <span className="material-symbols-outlined text-[22px]">picture_as_pdf</span>
+            </div>
+            <div>
+              <h4 className="text-xs font-semibold text-white tracking-wide">
+                Download Onboarding PDF Record
+              </h4>
+              <p className="text-[11px] text-white/50 font-light mt-0.5">
+                Formatted copy of all your responses, workflows &amp; roadmap
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="download-summary-pdf-btn"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="w-full sm:w-auto btn-gold px-4 py-2.5 rounded-xl text-[10px] uppercase font-bold tracking-[0.15em] flex items-center justify-center gap-1.5 shrink-0 shadow-md"
+          >
+            {isGeneratingPdf ? (
+              <>
+                <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                Generating...
+              </>
+            ) : pdfDownloaded ? (
+              <>
+                <span className="material-symbols-outlined text-[16px]">check</span>
+                Downloaded!
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[16px]">download</span>
+                Download PDF
+              </>
+            )}
+          </button>
+        </div>
 
         {/* Details Summary */}
         <div className="text-left bg-[#050505] border border-white/5 rounded-2xl p-4 mb-6 text-xs space-y-2 font-light">
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Business:</span>
-            <span className="text-white font-medium">{formData.businessName || 'Provided'}</span>
+            <span className="text-white font-medium truncate max-w-[200px]">{formData.businessName || 'Provided'}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Contact:</span>
@@ -89,7 +153,7 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="btn-gold flex-1 py-3 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em]"
+            className="btn-secondary flex-1 py-3 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em] hover:border-[#c5a47e]/40"
           >
             Done
           </button>

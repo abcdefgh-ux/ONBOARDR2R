@@ -76,8 +76,17 @@ function getSubmissions(): SubmissionRecord[] {
     if (fs.existsSync(SUBMISSIONS_FILE)) {
       const raw = fs.readFileSync(SUBMISSIONS_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length >= memorySubmissions.length) {
-        memorySubmissions = parsed;
+      if (Array.isArray(parsed)) {
+        const idMap = new Map<string, SubmissionRecord>();
+        parsed.forEach((p) => {
+          if (p && p.id) idMap.set(p.id, p);
+        });
+        memorySubmissions.forEach((m) => {
+          if (m && m.id) idMap.set(m.id, m);
+        });
+        memorySubmissions = Array.from(idMap.values()).sort(
+          (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+        );
       }
     }
   } catch (err) {
@@ -88,10 +97,17 @@ function getSubmissions(): SubmissionRecord[] {
 
 function saveSubmission(submission: SubmissionRecord) {
   try {
-    // 1. Update in-memory array immediately
-    memorySubmissions = [submission, ...memorySubmissions.filter((s) => s.id !== submission.id)];
-    
-    // 2. Persist to disk
+    const idMap = new Map<string, SubmissionRecord>();
+    idMap.set(submission.id, submission);
+    memorySubmissions.forEach((m) => {
+      if (m && m.id && !idMap.has(m.id)) {
+        idMap.set(m.id, m);
+      }
+    });
+    memorySubmissions = Array.from(idMap.values()).sort(
+      (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+    );
+
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -246,9 +262,8 @@ app.get('/api/submissions/export.csv', (_req, res) => {
 // PIN / Master Password Authentication for Response Copies
 app.post('/api/auth/verify-pin', (req, res) => {
   const { password } = req.body || {};
-  const validPasswords = ['ring2rev2026', 'admin2026', 'yaan2026', 'shayan2026', 'ring2rev', 'admin123'];
   
-  if (password && typeof password === 'string' && validPasswords.includes(password.trim())) {
+  if (password && typeof password === 'string' && (password.trim() === 'Qwerty' || password.trim() === 'qwerty')) {
     return res.json({ success: true, message: 'Authentication successful' });
   }
   return res.status(401).json({ success: false, error: 'Invalid password. Please try again.' });
