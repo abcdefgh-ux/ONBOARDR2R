@@ -1,3 +1,13 @@
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import {
+  getAuth,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  User,
+  signOut,
+} from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 import { jsPDF } from 'jspdf';
 import { OnboardingState, UploadedDoc } from '../types';
 import { generateOnboardingPDF } from '../utils/pdfGenerator';
@@ -26,10 +36,18 @@ export interface DriveUploadResult {
   error?: string;
 }
 
+// Initialize Firebase App & Auth
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+
+const provider = new GoogleAuthProvider();
+provider.addScope(DRIVE_SCOPE);
+
 let cachedAccessToken: string | null = null;
 let tokenExpiresAt: number = 0;
+let isSigningIn = false;
 
-// Load token from storage on boot if still valid
+// Check sessionStorage for persisted token across reloads
 try {
   const savedToken = sessionStorage.getItem('ring2rev_gdrive_token');
   const savedExp = sessionStorage.getItem('ring2rev_gdrive_token_exp');
@@ -42,7 +60,7 @@ try {
 }
 
 export function getCachedDriveToken(): string | null {
-  if (cachedAccessToken && tokenExpiresAt > Date.now()) {
+  if (cachedAccessToken && (tokenExpiresAt === 0 || tokenExpiresAt > Date.now())) {
     return cachedAccessToken;
   }
   return null;
@@ -71,7 +89,58 @@ export function clearDriveToken() {
 }
 
 /**
- * Acquire Google OAuth access token using Google Identity Services (GSI)
+ * Initialize Auth State Listener
+ */
+export const initAuth = (
+  onAuthSuccess?: (user: User, token: string | null) => void,
+  onAuthFailure?: () => void
+) => {
+  return onAuthStateChanged(auth, async (user: User | null) => {
+    if (user) {
+      if (cachedAccessToken) {
+        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      } else if (!isSigningIn) {
+        if (onAuthSuccess) onAuthSuccess(user, null);
+      }
+    } else {
+      clearDriveToken();
+      if (onAuthFailure) onAuthFailure();
+    }
+  });
+};
+
+/**
+ * Perform Firebase Google Sign In with Drive scope
+ */
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    isSigningIn = true;
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Failed to obtain Google Drive access token from Google sign in');
+    }
+
+    saveDriveToken(credential.accessToken, 3600);
+    return { user: result.user, accessToken: credential.accessToken };
+  } catch (error: any) {
+    console.error('Google sign in error:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+};
+
+/**
+ * Logout
+ */
+export const logout = async () => {
+  await signOut(auth);
+  clearDriveToken();
+};
+
+/**
+ * Acquire Google OAuth access token using Firebase Auth or fallback GSI
  */
 export async function requestDriveAccessToken(): Promise<string> {
   const currentToken = getCachedDriveToken();
@@ -79,69 +148,46 @@ export async function requestDriveAccessToken(): Promise<string> {
     return currentToken;
   }
 
-  // Fetch client ID if available
-  let clientId = '';
+  // 1. Try Firebase Popup Sign-in first
   try {
-    const res = await fetch('/api/auth/client-id');
-    const data = await res.json();
-    if (data.clientId) {
-      clientId = data.clientId;
+    const res = await googleSignIn();
+    if (res?.accessToken) {
+      return res.accessToken;
     }
-  } catch {
-    // Continue
+  } catch (firebaseErr: any) {
+    console.warn('Firebase popup attempt note:', firebaseErr);
   }
 
-  return new Promise((resolve, reject) => {
-    const google = (window as any).google;
-    if (!google || !google.accounts || !google.accounts.oauth2) {
-      let attempts = 0;
-      const interval = setInterval(() => {
-        attempts++;
-        const g = (window as any).google;
-        if (g?.accounts?.oauth2) {
-          clearInterval(interval);
-          initClient(g, clientId, resolve, reject);
-        } else if (attempts > 20) {
-          clearInterval(interval);
-          reject(new Error('Google Identity Services script not available. Please check internet connection.'));
-        }
-      }, 200);
-      return;
-    }
-
-    initClient(google, clientId, resolve, reject);
-  });
-}
-
-function initClient(
-  google: any,
-  clientId: string,
-  resolve: (token: string) => void,
-  reject: (reason: any) => void
-) {
-  try {
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: clientId || undefined,
-      scope: DRIVE_SCOPE,
-      callback: (tokenResponse: any) => {
-        if (tokenResponse.error) {
-          reject(new Error(tokenResponse.error_description || tokenResponse.error));
-          return;
-        }
-        if (tokenResponse.access_token) {
-          const expiresIn = Number(tokenResponse.expires_in) || 3600;
-          saveDriveToken(tokenResponse.access_token, expiresIn);
-          resolve(tokenResponse.access_token);
-        } else {
-          reject(new Error('No access token received from Google'));
-        }
-      },
+  // 2. Fallback to Google Identity Services if available
+  const clientId = firebaseConfig.oAuthClientId || '';
+  if (clientId && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+    return new Promise((resolve, reject) => {
+      try {
+        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: DRIVE_SCOPE,
+          callback: (tokenResponse: any) => {
+            if (tokenResponse.error) {
+              reject(new Error(tokenResponse.error_description || tokenResponse.error));
+              return;
+            }
+            if (tokenResponse.access_token) {
+              const expiresIn = Number(tokenResponse.expires_in) || 3600;
+              saveDriveToken(tokenResponse.access_token, expiresIn);
+              resolve(tokenResponse.access_token);
+            } else {
+              reject(new Error('No access token received from Google'));
+            }
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: '' });
+      } catch (err: any) {
+        reject(err);
+      }
     });
-
-    tokenClient.requestAccessToken({ prompt: '' });
-  } catch (err: any) {
-    reject(err);
   }
+
+  throw new Error('Google Drive authorization required. Please sign in to connect Google Drive.');
 }
 
 /**
@@ -303,7 +349,7 @@ export async function uploadOnboardingPdfToDrive({
   customToken?: string;
 }): Promise<DriveUploadResult> {
   try {
-    const token = customToken || (await requestDriveAccessToken());
+    const token = customToken || getCachedDriveToken() || (await requestDriveAccessToken());
     if (!token) {
       return { success: false, error: 'Google Drive authorization token required.' };
     }

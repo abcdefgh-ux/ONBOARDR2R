@@ -12,6 +12,7 @@ import { HelpModal } from './components/HelpModal';
 import { SaveExitModal } from './components/SaveExitModal';
 import { FinishSuccessModal } from './components/FinishSuccessModal';
 import { SubmissionsModal } from './components/SubmissionsModal';
+import { uploadOnboardingPdfToDrive, initAuth } from './services/googleDrive';
 
 const STORAGE_KEY = 'ring2rev_onboarding_state';
 
@@ -261,6 +262,15 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
         summaryText,
       },
     }));
+
+    // 3. Automatic silent background archive to connected Google Drive
+    uploadOnboardingPdfToDrive({
+      formData: { ...formData },
+      submissionId: finalSubId,
+      submittedAt: finalSubDate,
+    }).catch((driveErr) => {
+      console.warn('Background Drive archive note:', driveErr);
+    });
 
     setIsSubmitting(false);
     setIsFinishModalOpen(true);

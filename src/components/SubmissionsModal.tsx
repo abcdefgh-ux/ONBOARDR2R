@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { downloadOnboardingPDF } from '../utils/pdfGenerator';
-import { uploadOnboardingPdfToDrive, DriveUploadResult } from '../services/googleDrive';
+import {
+  uploadOnboardingPdfToDrive,
+  DriveUploadResult,
+  getCachedDriveToken,
+  googleSignIn,
+  logout,
+  initAuth,
+  auth,
+} from '../services/googleDrive';
+import { User } from 'firebase/auth';
 
 interface SubmissionItem {
   id: string;
@@ -40,8 +49,48 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [uploadingDriveId, setUploadingDriveId] = useState<string | null>(null);
   const [driveUploadResults, setDriveUploadResults] = useState<Record<string, DriveUploadResult>>({});
   const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
+  const [googleUser, setGoogleUser] = useState<User | null>(auth.currentUser);
+  const [isDriveConnecting, setIsDriveConnecting] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
 
   const MASTER_PASSWORD = 'Qwerty';
+
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user) => {
+        setGoogleUser(user);
+      },
+      () => {
+        setGoogleUser(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleConnectGoogleDrive = async () => {
+    setIsDriveConnecting(true);
+    setDriveError(null);
+    try {
+      const res = await googleSignIn();
+      if (res?.user) {
+        setGoogleUser(res.user);
+      }
+    } catch (err: any) {
+      console.error('Google drive sign in failed:', err);
+      setDriveError(err.message || 'Failed to connect Google Drive.');
+    } finally {
+      setIsDriveConnecting(false);
+    }
+  };
+
+  const handleDisconnectGoogleDrive = async () => {
+    try {
+      await logout();
+      setGoogleUser(null);
+    } catch (err) {
+      console.warn('Logout note:', err);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && isAuthenticated) {
@@ -416,15 +465,48 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
 
           <div className="flex items-center gap-2">
             {isAuthenticated && (
-              <button
-                type="button"
-                onClick={handleLockSession}
-                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs flex items-center gap-1.5 border border-white/5 transition-all"
-                title="Lock admin session"
-              >
-                <span className="material-symbols-outlined text-[16px]">lock</span>
-                Lock
-              </button>
+              <>
+                {googleUser ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-lg text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-emerald-300 text-[11px] font-medium truncate max-w-[140px]" title={googleUser.email || 'Drive Linked'}>
+                      Drive: {googleUser.email ? googleUser.email.split('@')[0] : 'Linked'}
+                    </span>
+                    <a
+                      href="https://drive.google.com/drive/home"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-400 hover:text-emerald-200"
+                      title="Open Google Drive Home"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                    </a>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConnectGoogleDrive}
+                    disabled={isDriveConnecting}
+                    className="px-3 py-1.5 rounded-lg bg-[#c5a47e]/15 hover:bg-[#c5a47e]/25 text-[#c5a47e] text-xs flex items-center gap-1.5 border border-[#c5a47e]/40 transition-all font-medium disabled:opacity-50"
+                    title="Sign in with Google to enable automatic Drive syncing"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {isDriveConnecting ? 'progress_activity' : 'cloud_sync'}
+                    </span>
+                    {isDriveConnecting ? 'Connecting...' : 'Link Google Drive'}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleLockSession}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs flex items-center gap-1.5 border border-white/5 transition-all"
+                  title="Lock admin session"
+                >
+                  <span className="material-symbols-outlined text-[16px]">lock</span>
+                  Lock
+                </button>
+              </>
             )}
             <button
               type="button"

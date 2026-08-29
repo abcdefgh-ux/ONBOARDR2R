@@ -280,7 +280,18 @@ app.post('/api/auth/verify-pin', (req, res) => {
 
 // OAuth Client Config endpoint
 app.get('/api/auth/client-id', (_req, res) => {
-  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.OAUTH_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
+  let clientId = process.env.GOOGLE_CLIENT_ID || process.env.OAUTH_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
+  if (!clientId) {
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        clientId = configData.oAuthClientId || '';
+      }
+    } catch (e) {
+      console.warn('Could not read firebase-applet-config.json for clientId:', e);
+    }
+  }
   res.json({ clientId });
 });
 
