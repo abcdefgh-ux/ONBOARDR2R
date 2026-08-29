@@ -814,31 +814,48 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   {showAppsScriptHelper && (
                     <div className="p-3.5 bg-black/90 rounded-lg border border-[#c5a47e]/30 mt-2 space-y-2 text-xs">
                       <p className="text-[11px] text-[#c5a47e] font-bold uppercase tracking-wider">
-                        Google Sheets Apps Script Quick Deployment
+                        Google Sheets &amp; Drive Auto-Sync Webhook Script
                       </p>
                       <p className="text-white/70 font-light leading-relaxed">
-                        In your Google Sheet, click <strong>Extensions &gt; Apps Script</strong>, paste the code below, and click <strong>Deploy &gt; New deployment &gt; Web app (Anyone)</strong>:
+                        In your Google Sheet, click <strong>Extensions &gt; Apps Script</strong>, replace everything with this code, and click <strong>Deploy &gt; New deployment &gt; Web app (Execute as: Me, Who has access: Anyone)</strong>:
                       </p>
                       <pre className="text-[10px] text-white/90 font-mono overflow-x-auto bg-[#0a0a0a] p-2.5 rounded-lg border border-white/10 whitespace-pre">
 {`function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["Submission ID", "Timestamp", "Business Name", "Contact", "Email", "Phone", "Calendar", "AI Tone", "Uploaded Docs Links", "Summary"]);
+  try {
+    var data = JSON.parse(e.postData.contents);
+    
+    // 1. Append to Google Sheet
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Submission ID", "Timestamp", "Business Name", "Contact", "Email", "Phone", "Calendar", "AI Tone", "Uploaded Docs Links", "Summary"]);
+    }
+    sheet.appendRow([
+      data.submissionId || "",
+      data.timestamp || new Date().toISOString(),
+      data.businessName || "",
+      data.primaryContactName || "",
+      data.primaryContactEmail || "",
+      data.mainPhone || "",
+      data.calendarPlatform || "",
+      data.aiTone || "",
+      data.uploadedDocsLinks || "",
+      data.summaryText || ""
+    ]);
+
+    // 2. Automatically save record in Google Drive
+    var rootFolders = DriveApp.getFoldersByName("Ring2Rev Onboarding Records");
+    var rootFolder = rootFolders.hasNext() ? rootFolders.next() : DriveApp.createFolder("Ring2Rev Onboarding Records");
+    
+    var clientFolderName = (data.businessName || "Client") + " - " + (data.submissionId || "Ref");
+    var clientFolder = rootFolder.createFolder(clientFolderName);
+    
+    // Save Onboarding Specification text
+    clientFolder.createFile("Onboarding_Specification_" + (data.businessName || "Client") + ".txt", data.summaryText || "", MimeType.PLAIN_TEXT);
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
-  var data = JSON.parse(e.postData.contents);
-  sheet.appendRow([
-    data.submissionId,
-    data.timestamp,
-    data.businessName,
-    data.primaryContactName,
-    data.primaryContactEmail,
-    data.mainPhone,
-    data.calendarPlatform,
-    data.aiTone,
-    data.uploadedDocsLinks,
-    data.summaryText
-  ]);
-  return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
 }`}
                       </pre>
                     </div>
