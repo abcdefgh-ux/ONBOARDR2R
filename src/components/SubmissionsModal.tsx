@@ -10,6 +10,7 @@ import {
   auth,
 } from '../services/googleDrive';
 import { User } from 'firebase/auth';
+import { fetchSubmissionsFromFirestore, saveSubmissionToFirestore } from '../services/firebaseDb';
 
 interface SubmissionItem {
   id: string;
@@ -150,7 +151,16 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const fetchSubmissions = async () => {
     setLoading(true);
     let serverList: SubmissionItem[] = [];
+    let firestoreList: SubmissionItem[] = [];
 
+    // 1. Fetch from Cloud Firestore (cross-device global persistence)
+    try {
+      firestoreList = await fetchSubmissionsFromFirestore();
+    } catch (fsErr) {
+      console.warn('Cloud Firestore fetch note:', fsErr);
+    }
+
+    // 2. Fetch from Node server disk storage
     try {
       const res = await fetch('/api/submissions');
       if (res.ok) {
@@ -160,10 +170,10 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
         }
       }
     } catch (err) {
-      console.warn('Submissions load warning:', err);
+      console.warn('Submissions server load warning:', err);
     }
 
-    // Also merge from localStorage for instantaneous client redundancy
+    // 3. Merge from localStorage for instantaneous client redundancy
     let localList: SubmissionItem[] = [];
     try {
       const localRaw = localStorage.getItem('ring2rev_submissions_history');
@@ -174,14 +184,39 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
       console.warn('Local submissions parse error:', localErr);
     }
 
-    // Combine both sources by ID
+    // Combine all sources by ID
     const mergedMap = new Map<string, SubmissionItem>();
-    serverList.forEach((item) => {
+    
+    // Firestore items first (authoritative cloud sync)
+    firestoreList.forEach((item) => {
       if (item && item.id) mergedMap.set(item.id, item);
     });
+
+    // Server items next
+    serverList.forEach((item) => {
+      if (item && item.id) {
+        if (!mergedMap.has(item.id)) {
+          mergedMap.set(item.id, item);
+          // Sync server item to Firestore for cloud availability
+          saveSubmissionToFirestore(item).catch(() => {});
+        } else {
+          // Merge any richer data
+          const existing = mergedMap.get(item.id)!;
+          if (item.data && Object.keys(item.data).length > Object.keys(existing.data || {}).length) {
+            mergedMap.set(item.id, { ...existing, ...item });
+          }
+        }
+      }
+    });
+
+    // Local client items next
     localList.forEach((item) => {
-      if (item && item.id && !mergedMap.has(item.id)) {
-        mergedMap.set(item.id, item);
+      if (item && item.id) {
+        if (!mergedMap.has(item.id)) {
+          mergedMap.set(item.id, item);
+          // Auto-sync offline/local item to Cloud Firestore
+          saveSubmissionToFirestore(item).catch(() => {});
+        }
       }
     });
 

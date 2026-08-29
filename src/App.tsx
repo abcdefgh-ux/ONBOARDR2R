@@ -13,6 +13,7 @@ import { SaveExitModal } from './components/SaveExitModal';
 import { FinishSuccessModal } from './components/FinishSuccessModal';
 import { SubmissionsModal } from './components/SubmissionsModal';
 import { uploadOnboardingPdfToDrive, initAuth } from './services/googleDrive';
+import { saveSubmissionToFirestore } from './services/firebaseDb';
 
 const STORAGE_KEY = 'ring2rev_onboarding_state';
 
@@ -248,6 +249,11 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
     } catch (storageErr) {
       console.warn('LocalStorage error:', storageErr);
     }
+
+    // Save to Cloud Firestore database so ALL submissions are permanently synced across every device
+    saveSubmissionToFirestore(submissionItem).catch((fsErr) => {
+      console.warn('Cloud Firestore save note:', fsErr);
+    });
 
     setFormData((prev) => ({
       ...prev,
