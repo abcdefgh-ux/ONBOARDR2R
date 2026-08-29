@@ -49,6 +49,8 @@ export const INITIAL_STATE: OnboardingState = {
   slackWebhook: '',
 
   n8nEmail: '',
+  calendarPlatform: 'Google Calendar',
+  calendarCustomName: '',
   paymentSetupConfirmed: false,
   crmSetupConfirmed: false,
 

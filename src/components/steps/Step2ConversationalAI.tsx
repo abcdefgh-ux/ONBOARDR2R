@@ -21,6 +21,8 @@ export const Step2ConversationalAI: React.FC<Step2Props> = ({
   const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+
   const tones: Array<'Friendly' | 'Professional' | 'Warm' | 'Direct'> = [
     'Friendly',
     'Professional',
@@ -28,17 +30,64 @@ export const Step2ConversationalAI: React.FC<Step2Props> = ({
     'Direct',
   ];
 
+  const processFiles = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    setUploadingFiles(true);
+    const newDocs: UploadedDoc[] = [];
+
+    for (const file of files) {
+      const docId = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+      // Read file into Base64 for guaranteed persistence
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
+
+      let serverFileUrl = '';
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: docId,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            dataUrl,
+          }),
+        });
+        if (res.ok) {
+          const resJson = await res.json();
+          if (resJson.fileUrl) {
+            serverFileUrl = resJson.fileUrl;
+          }
+        }
+      } catch {
+        // Fallback: dataUrl preserved
+      }
+
+      newDocs.push({
+        id: docId,
+        name: file.name,
+        size: file.size,
+        type: file.type || 'document',
+        uploadedAt: new Date(),
+        url: serverFileUrl,
+        dataUrl,
+      });
+    }
+
+    onChange('uploadedDocs', [...formData.uploadedDocs, ...newDocs]);
+    setUploadingFiles(false);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const fileList = Array.from(e.target.files) as File[];
-    const newFiles: UploadedDoc[] = fileList.map((f: File) => ({
-      id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      name: f.name,
-      size: f.size,
-      type: f.type || 'document',
-      uploadedAt: new Date(),
-    }));
-    onChange('uploadedDocs', [...formData.uploadedDocs, ...newFiles]);
+    processFiles(fileList);
   };
 
   const removeDoc = (id: string) => {
@@ -203,14 +252,7 @@ export const Step2ConversationalAI: React.FC<Step2Props> = ({
                     setIsDragging(false);
                     if (e.dataTransfer.files) {
                       const droppedFiles = Array.from(e.dataTransfer.files) as File[];
-                      const newDocs: UploadedDoc[] = droppedFiles.map((f: File) => ({
-                        id: `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                        name: f.name,
-                        size: f.size,
-                        type: f.type || 'file',
-                        uploadedAt: new Date(),
-                      }));
-                      onChange('uploadedDocs', [...formData.uploadedDocs, ...newDocs]);
+                      processFiles(droppedFiles);
                     }
                   }}
                   className={`border border-dashed rounded-xl p-7 text-center transition-all cursor-pointer bg-[#080808]/60 flex flex-col items-center justify-center ${

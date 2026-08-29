@@ -11,7 +11,9 @@ export interface UploadedDoc {
   name: string;
   size: number;
   type: string;
-  uploadedAt: Date;
+  uploadedAt: Date | string;
+  url?: string;
+  dataUrl?: string;
 }
 
 export interface SubmissionResult {
@@ -50,6 +52,8 @@ export interface OnboardingState {
 
   // Step 3: Integration
   n8nEmail: string;
+  calendarPlatform?: string;
+  calendarCustomName?: string;
   paymentSetupConfirmed: boolean;
   crmSetupConfirmed: boolean;
 

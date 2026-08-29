@@ -9,12 +9,26 @@ interface Step3Props {
   onSaveProgress?: () => void;
 }
 
+const CALENDAR_OPTIONS = [
+  { id: 'Google Calendar', label: 'Google Calendar', icon: 'calendar_month' },
+  { id: 'Calendly', label: 'Calendly', icon: 'event' },
+  { id: 'Cal.com', label: 'Cal.com', icon: 'schedule' },
+  { id: 'Microsoft Outlook 365', label: 'Outlook 365', icon: 'mail' },
+  { id: 'GoHighLevel / LeadConnector', label: 'GoHighLevel', icon: 'hub' },
+  { id: 'HubSpot Meetings', label: 'HubSpot', icon: 'handshake' },
+  { id: 'Jobber', label: 'Jobber', icon: 'construction' },
+  { id: 'ServiceTitan', label: 'ServiceTitan', icon: 'engineering' },
+  { id: 'Other', label: 'Other CRM / Custom', icon: 'more_horiz' },
+];
+
 export const Step3Integration: React.FC<Step3Props> = ({
   formData,
   onChange,
   onNext,
   onBack,
 }) => {
+  const selectedCalendar = formData.calendarPlatform || 'Google Calendar';
+
   return (
     <div className="max-w-6xl w-full mx-auto pb-32">
       <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -26,7 +40,7 @@ export const Step3Integration: React.FC<Step3Props> = ({
             Workflow &amp; Integrations
           </h2>
           <p className="text-sm text-white/50 mt-2 max-w-2xl font-light tracking-wide">
-            Connect your workflow automation accounts and calendar scheduling tools.
+            Select your calendar platform and connect your workflow automation accounts.
           </p>
         </div>
       </div>
@@ -36,6 +50,76 @@ export const Step3Integration: React.FC<Step3Props> = ({
         {/* Main Integration Card (8 cols) */}
         <div className="glass-panel rounded-2xl p-6 md:p-8 lg:col-span-8 flex flex-col gap-8 border-white/5">
           
+          {/* Calendar & Scheduling Section */}
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="material-symbols-outlined text-[#c5a47e] text-[22px]">
+                calendar_today
+              </span>
+              <h3 className="text-base font-light text-white tracking-wide">
+                Calendar &amp; Scheduling System
+              </h3>
+            </div>
+            <p className="text-xs text-white/50 mb-5 font-light leading-relaxed">
+              Select which calendar or scheduling platform your business uses for appointments and bookings:
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+              {CALENDAR_OPTIONS.map((cal) => {
+                const isSelected = selectedCalendar === cal.id;
+                return (
+                  <button
+                    key={cal.id}
+                    type="button"
+                    onClick={() => onChange('calendarPlatform', cal.id)}
+                    className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
+                      isSelected
+                        ? 'bg-[#c5a47e]/10 border-[#c5a47e] text-white shadow-[0_0_15px_rgba(197,164,126,0.15)]'
+                        : 'bg-[#080808]/80 border-white/5 text-white/70 hover:border-white/20 hover:text-white'
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[18px] ${isSelected ? 'text-[#c5a47e]' : 'text-white/40'}`}>
+                      {cal.icon}
+                    </span>
+                    <span className="text-xs font-medium truncate">{cal.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedCalendar === 'Other' && (
+              <div className="mt-3 p-4 rounded-xl bg-[#080808] border border-white/5 animate-fadeIn">
+                <label className="text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e] block mb-2">
+                  Specify Your Calendar / CRM Tool
+                </label>
+                <input
+                  type="text"
+                  value={formData.calendarCustomName || ''}
+                  onChange={(e) => onChange('calendarCustomName', e.target.value)}
+                  placeholder="e.g., Acuity Scheduling, Housecall Pro, Jane App, Custom Webhook..."
+                  className="w-full rounded-xl glass-input p-3 text-white text-xs"
+                />
+              </div>
+            )}
+
+            {/* Confidentiality Notice */}
+            <div className="mt-4 p-4 rounded-xl bg-[#080808] border border-[#c5a47e]/20 flex items-start gap-3">
+              <span className="material-symbols-outlined text-[#c5a47e] text-[20px] shrink-0 mt-0.5">
+                verified_user
+              </span>
+              <div>
+                <h4 className="text-xs font-semibold text-white mb-1">
+                  Confidential Live Connection
+                </h4>
+                <p className="text-xs text-white/50 leading-relaxed font-light">
+                  To ensure complete confidentiality and security, specific calendar credentials, API keys, and account access permissions will be securely collected and connected during your live onboarding call.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <hr className="border-white/5" />
+
           {/* N8N Workflow Connection */}
           <div>
             <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">
@@ -62,33 +146,6 @@ export const Step3Integration: React.FC<Step3Props> = ({
                 placeholder="you@yourcompany.com"
                 className="w-full rounded-xl glass-input p-3.5 text-white text-sm"
               />
-            </div>
-          </div>
-
-          <hr className="border-white/5" />
-
-          {/* Scheduling & CRM Setup */}
-          <div>
-            <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">
-              <span className="material-symbols-outlined text-[#c5a47e] text-[22px]">
-                calendar_today
-              </span>
-              Calendar &amp; Scheduling
-            </h3>
-            <p className="text-xs text-white/50 mb-6 font-light leading-relaxed">
-              Supported calendar platforms for real-time booking and appointment management:
-            </p>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {['Google Calendar', 'Calendly', 'Cal.com', 'GoHighLevel', 'HubSpot', 'Outlook 365', 'Jobber', 'Custom CRM'].map((cal) => (
-                <div
-                  key={cal}
-                  className="bg-[#050505] p-3 rounded-xl border border-white/5 flex items-center gap-2.5"
-                >
-                  <span className="w-2 h-2 rounded-full bg-[#c5a47e]"></span>
-                  <span className="text-xs text-white font-light">{cal}</span>
-                </div>
-              ))}
             </div>
           </div>
 

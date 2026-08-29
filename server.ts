@@ -20,6 +20,7 @@ interface SubmissionRecord {
 }
 
 const DATA_DIR = path.join(process.cwd(), '.data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const SUBMISSIONS_FILE = path.join(DATA_DIR, 'submissions.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'sheets_config.json');
 
@@ -30,6 +31,9 @@ function initStorage() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
     }
     if (fs.existsSync(CONFIG_FILE)) {
       const cfgRaw = fs.readFileSync(CONFIG_FILE, 'utf-8');
@@ -239,6 +243,72 @@ app.get('/api/submissions/export.csv', (_req, res) => {
   }
 });
 
+// PIN / Master Password Authentication for Response Copies
+app.post('/api/auth/verify-pin', (req, res) => {
+  const { password } = req.body || {};
+  const validPasswords = ['ring2rev2026', 'admin2026', 'yaan2026', 'shayan2026', 'ring2rev', 'admin123'];
+  
+  if (password && typeof password === 'string' && validPasswords.includes(password.trim())) {
+    return res.json({ success: true, message: 'Authentication successful' });
+  }
+  return res.status(401).json({ success: false, error: 'Invalid password. Please try again.' });
+});
+
+// Single or multi-file upload endpoint
+app.post('/api/upload', (req, res) => {
+  try {
+    const { id, name, type, size, dataUrl } = req.body || {};
+    if (!dataUrl || typeof dataUrl !== 'string' || !name) {
+      return res.status(400).json({ success: false, error: 'Missing file data' });
+    }
+
+    const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const docId = id || `doc_${Date.now()}`;
+    const filename = `${docId}_${safeName}`;
+    const filePath = path.join(UPLOADS_DIR, filename);
+
+    // Extract base64 part
+    const base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const fileUrl = `${protocol}://${host}/api/uploads/${filename}`;
+
+    console.log(`[Uploads] Successfully saved uploaded file: ${safeName} (${Math.round((size || 0)/1024)} KB)`);
+    return res.json({
+      success: true,
+      filename,
+      fileUrl,
+      name,
+      size,
+      type
+    });
+  } catch (err: any) {
+    console.error('File upload error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'File upload failed' });
+  }
+});
+
+// Serve uploaded knowledge base documents
+app.get('/api/uploads/:filename', (req, res) => {
+  try {
+    const safeFilename = path.basename(req.params.filename);
+    const filePath = path.join(UPLOADS_DIR, safeFilename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('File not found');
+    }
+
+    // Determine clean original file name
+    const originalName = safeFilename.replace(/^doc_[^_]+_/, '');
+    res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+    return res.sendFile(filePath);
+  } catch (err: any) {
+    return res.status(500).send('Error retrieving file: ' + err.message);
+  }
+});
+
 // GET all submissions copies for the portal owner/admin
 app.get('/api/submissions', (_req, res) => {
   try {
@@ -255,6 +325,50 @@ app.post('/api/submit', async (req, res) => {
     const formData = req.body || {};
     const submissionId = `R2R-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
     const timestamp = new Date().toISOString();
+
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const baseUrl = `${protocol}://${host}`;
+
+    // Process & save uploaded documents to disk
+    const processedDocs: any[] = [];
+    const docLinks: string[] = [];
+
+    if (Array.isArray(formData.uploadedDocs)) {
+      for (const doc of formData.uploadedDocs) {
+        if (!doc) continue;
+        const safeName = (doc.name || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const docId = doc.id || `doc_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        const filename = `${docId}_${safeName}`;
+        const filePath = path.join(UPLOADS_DIR, filename);
+
+        let fileUrl = doc.url || `${baseUrl}/api/uploads/${filename}`;
+
+        if (doc.dataUrl && typeof doc.dataUrl === 'string' && doc.dataUrl.includes('base64')) {
+          try {
+            const base64Data = doc.dataUrl.replace(/^data:[^;]+;base64,/, '');
+            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+            fileUrl = `${baseUrl}/api/uploads/${filename}`;
+          } catch (fileErr) {
+            console.error('Error saving embedded doc:', fileErr);
+          }
+        }
+
+        processedDocs.push({
+          id: docId,
+          name: doc.name,
+          size: doc.size,
+          type: doc.type,
+          uploadedAt: doc.uploadedAt || timestamp,
+          url: fileUrl,
+        });
+
+        docLinks.push(`${doc.name}: ${fileUrl}`);
+      }
+    }
+
+    // Attach processed documents with download links
+    formData.uploadedDocs = processedDocs;
 
     // Internal admin lead recipient (stored securely on server)
     const adminEmail = 'shayanalizafar@yahoo.com';
@@ -288,7 +402,7 @@ app.post('/api/submit', async (req, res) => {
       if (formData.slackWebhook && typeof formData.slackWebhook === 'string' && formData.slackWebhook.startsWith('http')) {
         try {
           const payload = {
-            text: `🚀 *New Ring2Rev Onboarding Submission* - ${formData.businessName || 'Client'}\n*ID:* ${submissionId}\n*Contact:* ${formData.primaryContactName} (${formData.primaryContactEmail})\n*Tone:* ${formData.aiTone}\n*Scenarios:* ${(formData.scenarios || []).length} defined`,
+            text: `🚀 *New Ring2Rev Onboarding Submission* - ${formData.businessName || 'Client'}\n*ID:* ${submissionId}\n*Contact:* ${formData.primaryContactName} (${formData.primaryContactEmail})\n*Tone:* ${formData.aiTone}\n*Calendar:* ${formData.calendarPlatform || 'Google Calendar'}\n*Scenarios:* ${(formData.scenarios || []).length} defined\n*Uploaded Docs:* ${docLinks.length ? docLinks.join(', ') : 'None'}`,
             attachments: [
               {
                 color: '#c5a47e',
@@ -341,6 +455,10 @@ app.post('/api/submit', async (req, res) => {
             .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
             .join(' | ');
 
+          const calendarInfo = formData.calendarPlatform === 'Other' && formData.calendarCustomName
+            ? `Other (${formData.calendarCustomName})`
+            : (formData.calendarPlatform || 'Google Calendar');
+
           const sheetPayload = {
             submissionId,
             timestamp,
@@ -354,6 +472,7 @@ app.post('/api/submit', async (req, res) => {
             aiTone: formData.aiTone || '',
             retellEmail: formData.retellEmail || '',
             n8nEmail: formData.n8nEmail || '',
+            calendarPlatform: calendarInfo,
             escalationName: formData.escalationName || '',
             escalationPhone: formData.escalationPhone || '',
             notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
@@ -362,6 +481,8 @@ app.post('/api/submit', async (req, res) => {
             customNotes: formData.customAutomationNotes || '',
             scenariosCount: (formData.scenarios || []).length,
             scenariosSummary,
+            uploadedDocsCount: (formData.uploadedDocs || []).length,
+            uploadedDocsLinks: docLinks.join(' \n'),
             summaryText,
           };
 
@@ -388,6 +509,7 @@ app.post('/api/submit', async (req, res) => {
       submissionId,
       submittedAt: timestamp,
       summaryText,
+      uploadedDocs: processedDocs,
       recipientEmails,
       message: 'Your onboarding specifications have been securely recorded and dispatched to our engineering pipeline.',
     });
