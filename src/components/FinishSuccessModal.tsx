@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { OnboardingState } from '../types';
-import { getCachedAccessToken, syncFormDataToGoogleSheet, signInWithGoogle } from '../services/googleSheets';
 
 interface FinishSuccessModalProps {
   isOpen: boolean;
@@ -18,19 +17,10 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
   onOpenSubmissions,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const [sheetUrl, setSheetUrl] = useState<string | undefined>(
-    formData.submissionResult?.spreadsheetUrl || formData.spreadsheetUrl
-  );
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const subResult = formData.submissionResult;
-  const recipientList = subResult?.recipientEmails || [
-    'shayanalizafar@yahoo.com',
-    formData.primaryContactEmail,
-  ].filter(Boolean) as string[];
 
   const summaryText =
     subResult?.summaryText ||
@@ -58,44 +48,54 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ring2rev-submission-${formData.businessName ? formData.businessName.toLowerCase().replace(/[^a-z0-9]/g, '-') : 'response'}.txt`;
+    a.download = `ring2rev-onboarding-${formData.businessName ? formData.businessName.toLowerCase().replace(/[^a-z0-9]/g, '-') : 'submission'}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleSyncToSheets = async () => {
-    setIsManualSyncing(true);
-    setSyncNotice(null);
-    try {
-      let token = getCachedAccessToken();
-      if (!token) {
-        const authRes = await signInWithGoogle();
-        token = authRes.accessToken;
-      }
-      const syncRes = await syncFormDataToGoogleSheet(
-        token,
-        formData,
-        subResult?.submissionId || `R2R-${Date.now().toString(36).toUpperCase()}`,
-        subResult?.submittedAt || new Date().toISOString(),
-        recipientList
-      );
-      setSheetUrl(syncRes.spreadsheetUrl);
-      setSyncNotice('✓ Successfully synced to Google Sheets!');
-    } catch (err: any) {
-      console.error(err);
-      setSyncNotice(`Notice: ${err?.message || 'Could not sync to Sheets'}`);
-    } finally {
-      setIsManualSyncing(false);
-    }
-  };
+  const handleDownloadJSON = () => {
+    const payload = {
+      submissionId: subResult?.submissionId,
+      submittedAt: subResult?.submittedAt || new Date().toISOString(),
+      businessName: formData.businessName,
+      contact: {
+        name: formData.primaryContactName,
+        email: formData.primaryContactEmail,
+        phone: formData.mainPhone,
+      },
+      operations: {
+        address: formData.businessAddress,
+        serviceArea: formData.serviceArea,
+        hours: formData.businessHours,
+        aiTone: formData.aiTone,
+      },
+      scenarios: formData.scenarios,
+      integrations: {
+        retellEmail: formData.retellEmail,
+        n8nEmail: formData.n8nEmail,
+      },
+      safety: {
+        escalationName: formData.escalationName,
+        escalationPhone: formData.escalationPhone,
+        notifyTeamOnEmergency: formData.notifyTeamOnEmergency,
+        smsFollowupEnabled: formData.smsFollowupEnabled,
+        autoBookingEnabled: formData.autoBookingEnabled,
+        customAutomationNotes: formData.customAutomationNotes,
+      },
+    };
 
-  const emailSubject = encodeURIComponent(`Copy of Ring2Rev Responses - ${formData.businessName || 'Onboarding'}`);
-  const emailBody = encodeURIComponent(summaryText);
-  const mailtoLink = `mailto:${recipientList.join(',')}?subject=${emailSubject}&body=${emailBody}`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ring2rev-payload-${subResult?.submissionId || 'export'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg">
-      <div className="glass-panel w-full max-w-xl rounded-3xl p-8 md:p-9 bg-[#0a0a0a] shadow-2xl border border-[#c5a47e]/30 text-center relative overflow-hidden max-h-[92vh] overflow-y-auto">
+      <div className="glass-panel w-full max-w-lg rounded-3xl p-8 md:p-9 bg-[#0a0a0a] shadow-2xl border border-[#c5a47e]/30 text-center relative overflow-hidden max-h-[92vh] overflow-y-auto">
         {/* Glow backdrop */}
         <div className="absolute -top-16 -left-16 w-48 h-48 bg-[#c5a47e]/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -105,87 +105,33 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
 
         <div className="flex items-center justify-center gap-2 mb-1">
           <span className="text-[10px] uppercase font-medium tracking-[0.25em] text-[#c5a47e]">
-            Deployment Record Created
+            Onboarding Completed
           </span>
         </div>
 
         <h3 className="text-2xl font-light text-white mb-2 tracking-tight">
-          Form Submitted &amp; Live Synchronized
+          Form Submitted Successfully
         </h3>
 
-        <p className="text-xs text-white/50 leading-relaxed mb-5 font-light">
+        <p className="text-xs text-white/50 leading-relaxed mb-6 font-light">
           Your onboarding specifications for{' '}
-          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your enterprise'}</strong> have been saved to the portal server, response copies were generated, and records are mapped to Google Sheets.
+          <strong className="text-[#c5a47e] font-medium">{formData.businessName || 'your enterprise'}</strong> have been securely recorded into our engineering pipeline.
         </p>
 
-        {/* Google Sheets Destination Card */}
-        <div className="bg-[#060606] border border-[#0f9d58]/40 rounded-2xl p-4 mb-4 text-left relative overflow-hidden">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#0f9d58] animate-pulse"></span>
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#34A853]">
-                Google Sheets Live Sync
-              </span>
+        {/* Receipt ID card */}
+        {subResult?.submissionId && (
+          <div className="bg-[#050505] border border-white/10 rounded-2xl p-4 mb-5 text-left flex justify-between items-center">
+            <div>
+              <span className="text-[9px] uppercase tracking-[0.2em] text-white/40 block">Submission Reference</span>
+              <span className="text-sm font-mono text-white font-medium">{subResult.submissionId}</span>
             </div>
-            {sheetUrl && (
-              <a
-                href={sheetUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] font-bold uppercase tracking-wider text-[#c5a47e] hover:text-white flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5"
-              >
-                <span>View In Sheets</span>
-                <span className="material-symbols-outlined text-[13px]">open_in_new</span>
-              </a>
-            )}
-          </div>
-          <p className="text-xs text-white/70 font-light mb-2">
-            Row data mapped with business info, scenarios breakdown, webhook URLs, and escalation routing.
-          </p>
-          {!sheetUrl ? (
-            <button
-              type="button"
-              onClick={handleSyncToSheets}
-              disabled={isManualSyncing}
-              className="text-xs text-black bg-white hover:bg-neutral-200 px-3 py-1.5 rounded-lg font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[16px]">sync</span>
-              {isManualSyncing ? 'Pushing to Sheets...' : 'Sync to Google Sheets Now'}
-            </button>
-          ) : (
-            <div className="text-[11px] font-mono text-white/50 truncate">
-              {sheetUrl}
-            </div>
-          )}
-          {syncNotice && (
-            <div className="mt-2 text-[11px] font-mono text-[#c5a47e]">{syncNotice}</div>
-          )}
-        </div>
-
-        {/* Copy Delivery Confirmation Banner */}
-        <div className="bg-[#050505] border border-emerald-500/30 rounded-2xl p-4 mb-5 text-left">
-          <div className="flex items-center gap-2.5 mb-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
-              Response Copies Dispatched To:
+            <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono rounded-lg border border-emerald-500/20">
+              ✓ Logged
             </span>
           </div>
-          <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-white/80">
-            {recipientList.map((em, i) => (
-              <span key={i} className="px-2 py-0.5 rounded bg-white/5 border border-white/5">
-                {em}
-              </span>
-            ))}
-          </div>
-          {subResult?.submissionId && (
-            <div className="mt-2.5 pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-white/40">
-              <span>Receipt ID: <strong className="text-white font-mono">{subResult.submissionId}</strong></span>
-              <span>{new Date(subResult.submittedAt).toLocaleTimeString()}</span>
-            </div>
-          )}
-        </div>
+        )}
 
-        {/* Action Quick Links for Responses */}
+        {/* Quick Tools */}
         <div className="grid grid-cols-3 gap-2.5 mb-6">
           <button
             type="button"
@@ -196,7 +142,7 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
               {copied ? 'check' : 'content_copy'}
             </span>
             <span className="text-[10px] text-white/80 font-medium">
-              {copied ? 'Copied!' : 'Copy Text'}
+              {copied ? 'Copied!' : 'Copy Summary'}
             </span>
           </button>
 
@@ -209,27 +155,28 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
               download
             </span>
             <span className="text-[10px] text-white/80 font-medium">
-              Download .txt
+              Save .TXT
             </span>
           </button>
 
-          <a
-            href={mailtoLink}
+          <button
+            type="button"
+            onClick={handleDownloadJSON}
             className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-[#c5a47e]/40 transition-all flex flex-col items-center justify-center gap-1 group"
           >
             <span className="material-symbols-outlined text-[18px] text-[#c5a47e] group-hover:scale-110 transition-transform">
-              forward_to_inbox
+              data_object
             </span>
             <span className="text-[10px] text-white/80 font-medium">
-              Email Client
+              Save .JSON
             </span>
-          </a>
+          </button>
         </div>
 
         {/* Details Summary Box */}
         <div className="text-left bg-[#050505] border border-white/5 rounded-2xl p-4 mb-6 text-xs space-y-2 font-light">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Company:</span>
+            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Enterprise:</span>
             <span className="text-white font-medium">{formData.businessName || 'Provided'}</span>
           </div>
           <div className="flex justify-between items-center">
@@ -237,12 +184,12 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
             <span className="text-white font-medium">{formData.primaryContactName || 'Provided'}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">AI Vocal Profile:</span>
+            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Voice Tone:</span>
             <span className="text-[#c5a47e] font-medium">{formData.aiTone}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Active Scenarios:</span>
-            <span className="text-white font-medium">{formData.scenarios.length} Configured</span>
+            <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">Configured Scenarios:</span>
+            <span className="text-white font-medium">{formData.scenarios.length} Scenarios</span>
           </div>
         </div>
 
@@ -253,7 +200,7 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
             onClick={onRestart}
             className="btn-secondary px-5 py-2.5 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em]"
           >
-            Review Form
+            Review Responses
           </button>
           {onOpenSubmissions && (
             <button
@@ -265,13 +212,13 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
               className="btn-secondary px-5 py-2.5 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em] flex items-center justify-center gap-1 text-[#c5a47e]"
             >
               <span className="material-symbols-outlined text-[14px]">history</span>
-              Submissions Log
+              Portal Records
             </button>
           )}
           <button
             type="button"
             onClick={onClose}
-            className="btn-gold px-6 py-2.5 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em]"
+            className="btn-gold px-7 py-2.5 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em]"
           >
             Done
           </button>
@@ -280,4 +227,3 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
     </div>
   );
 };
-

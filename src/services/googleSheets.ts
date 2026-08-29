@@ -28,6 +28,13 @@ provider.setCustomParameters({ prompt: 'select_account' });
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
+export interface GoogleAuthResult {
+  user: User | null;
+  accessToken: string | null;
+  cancelled?: boolean;
+  error?: string | null;
+}
+
 export const initGoogleAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
@@ -44,19 +51,49 @@ export const initGoogleAuth = (
   });
 };
 
-export const signInWithGoogle = async (): Promise<{ user: User; accessToken: string }> => {
+export const signInWithGoogle = async (): Promise<GoogleAuthResult> => {
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Failed to obtain Google access token');
+      return {
+        user: null,
+        accessToken: null,
+        error: 'No access token received from Google.',
+      };
     }
     cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    return {
+      user: result.user,
+      accessToken: cachedAccessToken,
+      cancelled: false,
+    };
   } catch (error: any) {
-    console.error('Google Sign-In Error:', error);
-    throw error;
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request'
+    ) {
+      // Graceful cancellation: user simply closed or dismissed the popup
+      return {
+        user: null,
+        accessToken: null,
+        cancelled: true,
+      };
+    }
+    if (error?.code === 'auth/popup-blocked') {
+      return {
+        user: null,
+        accessToken: null,
+        error: 'Popup was blocked by your browser. Please allow popups for this site and try again.',
+      };
+    }
+    console.warn('Google Sign-In notice:', error?.message || error);
+    return {
+      user: null,
+      accessToken: null,
+      error: error?.message || 'Authentication with Google could not be completed.',
+    };
   } finally {
     isSigningIn = false;
   }

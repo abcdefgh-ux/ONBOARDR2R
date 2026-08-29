@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             id="header-user-avatar"
             className="w-9 h-9 rounded-full bg-[#111111] border border-white/10 flex items-center justify-center text-white/70 shadow-md shadow-black/40 hover:border-[#c5a47e]/40 transition-colors"
-            title="User Profile: shayanalizafar@yahoo.com"
+            title="Client Portal Account"
           >
             <span className="material-symbols-outlined text-[18px]">person</span>
           </div>

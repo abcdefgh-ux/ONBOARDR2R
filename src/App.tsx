@@ -130,7 +130,7 @@ export default function App() {
             webhookSent: data.webhookSent,
             summaryText: data.summaryText,
           };
-          showToast(`✓ Responses copy dispatched to ${data.recipientEmails.join(', ')}`);
+          showToast('✓ Onboarding portal submitted successfully');
         }
       }
 
@@ -140,9 +140,8 @@ export default function App() {
         isSubmitted: true,
         lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         submissionResult: subResult || {
-          submissionId: `R2R-LOCAL-${Date.now().toString(36).toUpperCase()}`,
+          submissionId: `R2R-REC-${Date.now().toString(36).toUpperCase()}`,
           submittedAt: new Date().toISOString(),
-          recipientEmails: ['shayanalizafar@yahoo.com', prev.primaryContactEmail].filter(Boolean) as string[],
           webhookSent: false,
           summaryText: 'Onboarding completed successfully.',
         },
@@ -159,7 +158,7 @@ export default function App() {
         lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }));
       setIsFinishModalOpen(true);
-      showToast('Responses recorded locally and ready for export');
+      showToast('Responses recorded locally and ready for review');
     } finally {
       setIsSubmitting(false);
     }

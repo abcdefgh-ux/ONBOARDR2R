@@ -104,9 +104,91 @@ Dispatch Status: Recorded to portal server & ready for review.
 =====================================================`;
 }
 
+function escapeCsvCell(val: any): string {
+  if (val === undefined || val === null) return '""';
+  const str = String(val);
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+function formatSubmissionsCsv(records: SubmissionRecord[]): string {
+  const headers = [
+    'Submission ID',
+    'Submitted At',
+    'Business Name',
+    'Primary Contact Name',
+    'Primary Contact Email',
+    'Main Phone',
+    'Business Address',
+    'Service Area / Territory',
+    'Business Hours',
+    'AI Tone',
+    'Retell Account Email',
+    'N8N Email',
+    'Escalation Contact Name',
+    'Escalation Phone',
+    'Notification Webhook',
+    'Emergency Alert Enabled',
+    'SMS Follow-up Enabled',
+    'Auto Booking Enabled',
+    'Custom Automation Notes',
+    'Configured Scenarios Count',
+    'Scenarios Summary',
+    'Uploaded Docs Count',
+    'Summary Transcript',
+  ];
+
+  const rows = records.map((rec) => {
+    const d = rec.data || {};
+    const scenarios = (d.scenarios || [])
+      .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+      .join(' | ');
+
+    return [
+      escapeCsvCell(rec.id),
+      escapeCsvCell(rec.submittedAt),
+      escapeCsvCell(d.businessName),
+      escapeCsvCell(d.primaryContactName),
+      escapeCsvCell(d.primaryContactEmail),
+      escapeCsvCell(d.mainPhone),
+      escapeCsvCell(d.businessAddress),
+      escapeCsvCell(d.serviceArea),
+      escapeCsvCell(d.businessHours),
+      escapeCsvCell(d.aiTone),
+      escapeCsvCell(d.retellEmail),
+      escapeCsvCell(d.n8nEmail),
+      escapeCsvCell(d.escalationName),
+      escapeCsvCell(d.escalationPhone),
+      escapeCsvCell(d.slackWebhook),
+      escapeCsvCell(d.notifyTeamOnEmergency ? 'TRUE' : 'FALSE'),
+      escapeCsvCell(d.smsFollowupEnabled ? 'TRUE' : 'FALSE'),
+      escapeCsvCell(d.autoBookingEnabled ? 'TRUE' : 'FALSE'),
+      escapeCsvCell(d.customAutomationNotes),
+      escapeCsvCell((d.scenarios || []).length),
+      escapeCsvCell(scenarios),
+      escapeCsvCell((d.uploadedDocs || []).length),
+      escapeCsvCell(rec.summaryText),
+    ].join(',');
+  });
+
+  return [headers.join(','), ...rows].join('\n');
+}
+
 // API Routes
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Export all submissions as CSV (for direct Google Sheets =IMPORTDATA sync or download)
+app.get('/api/submissions/export.csv', (_req, res) => {
+  try {
+    const list = getSubmissions();
+    const csv = formatSubmissionsCsv(list);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ring2rev-submissions.csv"');
+    res.send(csv);
+  } catch (err: any) {
+    res.status(500).send('Error exporting CSV: ' + err.message);
+  }
 });
 
 // GET all submissions copies for the portal owner/admin
@@ -126,7 +208,7 @@ app.post('/api/submit', async (req, res) => {
     const submissionId = `R2R-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
     const timestamp = new Date().toISOString();
 
-    // Determine recipient emails who receive this copy
+    // Internal admin lead recipient (stored securely on server, not exposed in client response)
     const adminEmail = 'shayanalizafar@yahoo.com';
     const recipientEmails: string[] = [adminEmail];
     
@@ -140,7 +222,7 @@ app.post('/api/submit', async (req, res) => {
     const summaryText = formatSummaryText(formData, submissionId, timestamp);
 
     let webhookSent = false;
-    // If a Slack/webhook endpoint was provided in Step 2, dispatch notification
+    // 1. If a Slack/webhook endpoint was provided, dispatch notification
     if (formData.slackWebhook && formData.slackWebhook.startsWith('http')) {
       try {
         const payload = {
@@ -165,6 +247,47 @@ app.post('/api/submit', async (req, res) => {
       }
     }
 
+    // 2. Behind-the-scenes Google Sheets Webhook push if GOOGLE_SHEETS_WEBHOOK_URL is configured
+    const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+    if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
+      try {
+        const scenariosSummary = (formData.scenarios || [])
+          .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+          .join(' | ');
+
+        const sheetPayload = {
+          submissionId,
+          timestamp,
+          businessName: formData.businessName || '',
+          primaryContactName: formData.primaryContactName || '',
+          primaryContactEmail: formData.primaryContactEmail || '',
+          mainPhone: formData.mainPhone || '',
+          businessAddress: formData.businessAddress || '',
+          serviceArea: formData.serviceArea || '',
+          businessHours: formData.businessHours || '',
+          aiTone: formData.aiTone || '',
+          retellEmail: formData.retellEmail || '',
+          n8nEmail: formData.n8nEmail || '',
+          escalationName: formData.escalationName || '',
+          escalationPhone: formData.escalationPhone || '',
+          notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
+          smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
+          autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+          scenariosCount: (formData.scenarios || []).length,
+          scenariosSummary,
+          summaryText,
+        };
+
+        fetch(sheetsWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sheetPayload),
+        }).catch((err) => console.warn('Background Sheets Webhook push note:', err.message));
+      } catch (sheetsErr) {
+        console.warn('Google Sheets background push note:', sheetsErr);
+      }
+    }
+
     const record: SubmissionRecord = {
       id: submissionId,
       submittedAt: timestamp,
@@ -176,16 +299,15 @@ app.post('/api/submit', async (req, res) => {
 
     saveSubmission(record);
 
-    console.log(`[Ring2Rev] Form submission ${submissionId} processed. Copy generated for: ${recipientEmails.join(', ')}`);
+    console.log(`[Ring2Rev] Form submission ${submissionId} recorded.`);
 
+    // Return clean, client-safe confirmation without revealing personal admin email addresses
     res.json({
       success: true,
       submissionId,
       submittedAt: timestamp,
-      recipientEmails,
-      webhookSent,
       summaryText,
-      message: `A full copy of your responses has been recorded and scheduled for dispatch to ${recipientEmails.join(', ')}.`,
+      message: 'Your onboarding specifications have been securely recorded and dispatched to our engineering pipeline.',
     });
   } catch (err: any) {
     console.error('Error submitting form:', err);

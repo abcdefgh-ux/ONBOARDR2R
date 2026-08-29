@@ -22,6 +22,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [resending, setResending] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedFormula, setCopiedFormula] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -65,6 +66,14 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     URL.revokeObjectURL(url);
   };
 
+  const handleCopySheetsFormula = () => {
+    const origin = window.location.origin;
+    const formula = `=IMPORTDATA("${origin}/api/submissions/export.csv")`;
+    navigator.clipboard.writeText(formula);
+    setCopiedFormula(true);
+    setTimeout(() => setCopiedFormula(false), 3000);
+  };
+
   const handleResendCopy = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubmission || !resendEmail.trim()) return;
@@ -97,33 +106,56 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
       <div className="glass-panel w-full max-w-5xl rounded-3xl p-6 md:p-8 bg-[#0a0a0a] shadow-2xl border border-white/10 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex justify-between items-center pb-5 border-b border-white/5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-white/5 gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-[#c5a47e] border border-white/5">
-              <span className="material-symbols-outlined text-[20px]">mark_email_read</span>
+              <span className="material-symbols-outlined text-[20px]">table_chart</span>
             </div>
             <div>
               <h3 className="text-base font-light text-white tracking-wide">
-                Received Response Copies ({submissions.length})
+                Portal Submissions &amp; Google Sheet Bridge ({submissions.length})
               </h3>
               <p className="text-[10px] text-white/40 uppercase tracking-[0.15em]">
-                Live Portal Submissions &amp; Response Telemetry
+                Live Storage &amp; Data Pipeline
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+
+          <div className="flex items-center gap-2">
+            <a
+              href="/api/submissions/export.csv"
+              download="ring2rev-submissions.csv"
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-[#c5a47e] flex items-center gap-1.5 transition-colors font-medium"
+              title="Download full CSV of all submissions"
+            >
+              <span className="material-symbols-outlined text-[16px]">file_download</span>
+              Download CSV
+            </a>
+            <button
+              type="button"
+              onClick={handleCopySheetsFormula}
+              className="px-3 py-1.5 rounded-xl bg-[#0f9d58]/20 hover:bg-[#0f9d58]/30 border border-[#0f9d58]/40 text-xs text-[#34A853] flex items-center gap-1.5 transition-colors font-medium"
+              title="Copy Google Sheets =IMPORTDATA formula"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {copiedFormula ? 'check' : 'table_view'}
+              </span>
+              {copiedFormula ? 'Copied =IMPORTDATA!' : 'Copy Sheets Formula'}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors ml-2"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center py-20 text-white/40 text-xs">
             <span className="material-symbols-outlined animate-spin mr-2 text-[#c5a47e]">progress_activity</span>
-            Loading response records...
+            Loading submission records...
           </div>
         ) : submissions.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
@@ -132,7 +164,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
             </div>
             <p className="text-sm text-white font-medium mb-1">No Form Submissions Yet</p>
             <p className="text-xs text-white/40 font-light max-w-sm">
-              When anyone completes and submits the 5-step onboarding flow, a copy of all responses will instantly populate here and be dispatched to your inbox.
+              When anyone completes and submits the 5-step onboarding flow, their submission will automatically populate here and append to your Google Sheet behind the scenes.
             </p>
           </div>
         ) : (
@@ -164,10 +196,6 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   <p className="text-[11px] text-white/40 truncate mt-0.5">
                     {sub.data?.primaryContactName || 'No contact'} ({sub.data?.primaryContactEmail || 'No email'})
                   </p>
-                  <div className="flex items-center gap-1.5 mt-2 text-[9px] text-white/30">
-                    <span className="material-symbols-outlined text-[12px] text-[#c5a47e]">outgoing_mail</span>
-                    <span className="truncate">Sent to: {sub.recipientEmails?.join(', ') || 'Admin'}</span>
-                  </div>
                 </button>
               ))}
             </div>
@@ -181,8 +209,8 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c5a47e]">
                       Record: {selectedSubmission.id}
                     </span>
-                    <span className="px-2 py-0.5 bg-[#c5a47e]/10 text-[#c5a47e] text-[9px] rounded font-medium border border-[#c5a47e]/20">
-                      Copy Dispatched
+                    <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] rounded font-medium border border-emerald-500/20">
+                      ✓ Recorded
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -206,25 +234,17 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                       <span className="material-symbols-outlined text-[14px]">download</span>
                       Download JSON
                     </button>
-                    <a
-                      href={`mailto:${selectedSubmission.recipientEmails.join(',')}?subject=Copy of Ring2Rev Onboarding - ${encodeURIComponent(selectedSubmission.data?.businessName || 'Response Record')}&body=${encodeURIComponent(selectedSubmission.summaryText)}`}
-                      className="px-3 py-1.5 rounded-lg bg-[#c5a47e] text-black font-semibold text-xs flex items-center gap-1.5 transition-opacity hover:opacity-90"
-                      title="Open formatted copy in default email client"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">send</span>
-                      Email Draft
-                    </a>
                   </div>
                 </div>
 
-                {/* Recipient Distribution Card */}
+                {/* Recipient / Forwarding Card */}
                 <div className="p-3.5 bg-[#050505] rounded-xl border border-white/5 text-xs space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] uppercase tracking-[0.15em] text-white/40">
-                      Dispatched Copy Recipients:
+                      Submitter Email:
                     </span>
                     <span className="text-white/80 font-mono text-[11px]">
-                      {selectedSubmission.recipientEmails?.join(' • ')}
+                      {selectedSubmission.data?.primaryContactEmail || 'N/A'}
                     </span>
                   </div>
                   {/* Resend input form */}
@@ -234,7 +254,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                       required
                       value={resendEmail}
                       onChange={(e) => setResendEmail(e.target.value)}
-                      placeholder="Dispatch extra copy to email address..."
+                      placeholder="Forward submission copy to email..."
                       className="flex-1 bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#c5a47e] focus:outline-none"
                     />
                     <button
@@ -242,7 +262,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                       disabled={resending}
                       className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-lg text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
                     >
-                      {resending ? 'Sending...' : 'Send Extra Copy'}
+                      {resending ? 'Sending...' : 'Forward'}
                     </button>
                   </form>
                   {resendStatus && (
@@ -260,14 +280,15 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
         )}
 
         {/* Footer */}
-        <div className="pt-4 mt-4 border-t border-white/5 flex justify-between items-center">
-          <span className="text-[10px] text-white/40">
-            Automatic copy generation enabled for <strong className="text-white font-normal">shayanalizafar@yahoo.com</strong> and submitter.
-          </span>
+        <div className="pt-4 mt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="text-[11px] text-white/40 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>All submissions automatically store to the backend database &amp; Google Sheets export.</span>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary px-6 py-2 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em]"
+            className="btn-secondary px-6 py-2 rounded-xl text-[10px] uppercase font-bold tracking-[0.2em] self-end sm:self-auto"
           >
             Close
           </button>

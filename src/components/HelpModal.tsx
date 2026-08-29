@@ -52,14 +52,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c5a47e] mb-1">
               Dedicated Engineering Lead
             </h4>
-            <p className="text-xs text-white/50 font-light">
-              Need immediate architectural clarification? Contact Shayan at{' '}
-              <a
-                href="mailto:shayanalizafar@yahoo.com"
-                className="text-[#c5a47e] underline hover:text-white"
-              >
-                shayanalizafar@yahoo.com
-              </a>
+            <p className="text-xs text-white/50 font-light leading-relaxed">
+              Need immediate architectural clarification? Our Solutions Architecture lead Shayan Ali Zafar will coordinate your technical setup during the live onboarding phase.
             </p>
           </div>
         </div>

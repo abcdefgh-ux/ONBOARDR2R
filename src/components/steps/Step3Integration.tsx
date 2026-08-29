@@ -1,12 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { OnboardingState } from '../../types';
-import { GoogleSignInButton } from '../GoogleSignInButton';
-import {
-  signInWithGoogle,
-  signOutGoogle,
-  getCachedAccessToken,
-  createRing2RevSpreadsheet,
-} from '../../services/googleSheets';
 
 interface Step3Props {
   formData: OnboardingState;
@@ -14,9 +7,6 @@ interface Step3Props {
   onNext: () => void;
   onBack: () => void;
   onSaveProgress: () => void;
-  googleUserEmail?: string | null;
-  onGoogleSignInSuccess?: (email: string, token: string) => void;
-  onGoogleSignOutSuccess?: () => void;
 }
 
 export const Step3Integration: React.FC<Step3Props> = ({
@@ -25,63 +15,7 @@ export const Step3Integration: React.FC<Step3Props> = ({
   onNext,
   onBack,
   onSaveProgress,
-  googleUserEmail,
-  onGoogleSignInSuccess,
-  onGoogleSignOutSuccess,
 }) => {
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
-
-  const handleGoogleConnect = async () => {
-    setIsConnecting(true);
-    setSyncStatusMsg(null);
-    try {
-      const res = await signInWithGoogle();
-      if (res && res.user) {
-        const email = res.user.email || 'Connected Google Account';
-        onChange('googleAccountEmail', email);
-        onChange('googleSyncEnabled', true);
-        if (onGoogleSignInSuccess) {
-          onGoogleSignInSuccess(email, res.accessToken);
-        }
-
-        // Pre-create or link spreadsheet
-        if (!formData.spreadsheetId) {
-          try {
-            const sheet = await createRing2RevSpreadsheet(res.accessToken);
-            onChange('spreadsheetId', sheet.spreadsheetId);
-            onChange('spreadsheetUrl', sheet.spreadsheetUrl);
-            setSyncStatusMsg(`✓ Google Sheet created & connected: ${sheet.spreadsheetId.slice(0, 12)}...`);
-          } catch (sheetErr: any) {
-            console.warn('Could not auto-create sheet on connect:', sheetErr);
-            setSyncStatusMsg('✓ Google Connected. Sheet will be initialized on submission.');
-          }
-        } else {
-          setSyncStatusMsg('✓ Google Connected and ready to record submissions.');
-        }
-      }
-    } catch (err: any) {
-      console.error('Google connect error:', err);
-      setSyncStatusMsg(`Connection notice: ${err?.message || 'Could not complete Google Sign-In'}`);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const handleGoogleDisconnect = async () => {
-    try {
-      await signOutGoogle();
-      onChange('googleAccountEmail', undefined);
-      onChange('googleSyncEnabled', false);
-      if (onGoogleSignOutSuccess) {
-        onGoogleSignOutSuccess();
-      }
-      setSyncStatusMsg('Google Account disconnected');
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   return (
     <div className="max-w-6xl w-full mx-auto pb-32">
       <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -93,7 +27,7 @@ export const Step3Integration: React.FC<Step3Props> = ({
             Workflow &amp; Integration Hub
           </h2>
           <p className="text-sm text-white/50 mt-2 max-w-2xl font-light tracking-wide">
-            Establish secure orchestration bridges connecting conversational models and Google Sheets with your operational infrastructure.
+            Configure how your autonomous voice assistant orchestrates scheduling, workflow automations, and operational tools.
           </p>
         </div>
         <button
@@ -111,117 +45,77 @@ export const Step3Integration: React.FC<Step3Props> = ({
         {/* Main Integration Card (8 cols) */}
         <div className="glass-panel rounded-2xl p-6 md:p-8 lg:col-span-8 flex flex-col gap-8 border-white/5">
           
-          {/* Google Sheets Real-Time Sync Card */}
-          <div className="bg-[#0b0b0b] border border-[#c5a47e]/30 rounded-2xl p-6 relative overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#0f9d58]/10 border border-[#0f9d58]/30 flex items-center justify-center text-[#0f9d58]">
-                  <span className="material-symbols-outlined text-[24px]">table_chart</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-light text-white flex items-center gap-2 tracking-wide">
-                    Google Sheets Real-Time Sync
-                    <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-[#0f9d58]/20 text-[#34A853] border border-[#0f9d58]/40">
-                      Live Bridge
-                    </span>
-                  </h3>
-                  <p className="text-xs text-white/50 font-light">
-                    Every onboarding portal submission is appended to a structured Google Sheet with permission.
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <GoogleSignInButton
-                  onClick={handleGoogleConnect}
-                  isLoading={isConnecting}
-                  userEmail={formData.googleAccountEmail || googleUserEmail}
-                  onSignOut={handleGoogleDisconnect}
-                />
-              </div>
-            </div>
-
-            {/* Status & Spreadsheet Link details */}
-            <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              <div className="bg-black/50 p-3 rounded-xl border border-white/5">
-                <span className="text-[10px] text-white/40 uppercase tracking-wider block mb-1">Spreadsheet Status</span>
-                <div className="flex items-center gap-2 text-white">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="font-mono text-xs">
-                    {formData.spreadsheetId ? 'Linked & Configured' : 'Auto-initializes on submit'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-black/50 p-3 rounded-xl border border-white/5">
-                <span className="text-[10px] text-white/40 uppercase tracking-wider block mb-1">Target Sheet URL</span>
-                {formData.spreadsheetUrl ? (
-                  <a
-                    href={formData.spreadsheetUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[#c5a47e] hover:text-white underline font-mono text-xs flex items-center gap-1 truncate"
-                  >
-                    <span className="truncate">{formData.spreadsheetUrl}</span>
-                    <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                  </a>
-                ) : (
-                  <span className="text-white/40 font-mono text-xs">
-                    Ring2Rev Onboarding Submissions.gsheet
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {syncStatusMsg && (
-              <div className="mt-3 p-2.5 rounded-lg bg-white/5 border border-white/10 text-xs text-[#c5a47e] font-mono">
-                {syncStatusMsg}
-              </div>
-            )}
-          </div>
-
-          <hr className="border-white/5" />
-
+          {/* N8N Workflow Connection */}
           <div>
             <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">
               <span className="material-symbols-outlined text-[#c5a47e] text-[22px]">
                 account_tree
               </span>
-              N8N Workflow Connection
+              N8N Workflow &amp; Automation Hub
             </h3>
-            <p className="text-xs text-white/50 mb-6 font-light">
-              We leverage enterprise N8N pipelines to orchestrate real-time telemetry, Google Sheets webhooks, and API requests.
+            <p className="text-xs text-white/50 mb-6 font-light leading-relaxed">
+              We leverage enterprise N8N pipelines to orchestrate real-time call telemetry, webhook routing, and multi-system data flows.
             </p>
             <div className="flex flex-col gap-2">
               <label
                 htmlFor="n8n-email"
                 className="text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e]"
               >
-                N8N Account Email
+                N8N Account Email (Optional)
               </label>
               <input
                 id="n8n-email"
                 type="email"
-                value={formData.n8nEmail}
+                value={formData.n8nEmail || ''}
                 onChange={(e) => onChange('n8nEmail', e.target.value)}
                 placeholder="you@yourcompany.com"
                 className="w-full rounded-xl glass-input p-3.5 text-white text-sm"
               />
+              <span className="text-[11px] text-white/40 font-light">
+                If you have an existing N8N cloud workspace, enter your email so we can prepare workflow invitations.
+              </span>
             </div>
           </div>
 
           <hr className="border-white/5" />
 
-          {/* Secure Call Info Cards */}
+          {/* Scheduling & CRM Setup */}
+          <div>
+            <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">
+              <span className="material-symbols-outlined text-[#c5a47e] text-[22px]">
+                calendar_today
+              </span>
+              Calendar &amp; CRM Scheduling Protocol
+            </h3>
+            <p className="text-xs text-white/50 mb-6 font-light leading-relaxed">
+              Select your primary booking platform so the AI voice agent can check real-time availability and book appointments directly during phone conversations.
+            </p>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              {['Google Calendar', 'Calendly', 'Cal.com', 'GoHighLevel', 'HubSpot', 'Outlook 365', 'Jobber', 'Custom CRM'].map((cal) => (
+                <div
+                  key={cal}
+                  className="bg-[#050505] p-3 rounded-xl border border-white/5 hover:border-[#c5a47e]/40 transition-colors flex items-center gap-2.5"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#c5a47e]"></span>
+                  <span className="text-xs text-white font-light">{cal}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <hr className="border-white/5" />
+
+          {/* Secure Live Handshake Cards */}
           <div>
             <h3 className="text-base font-light text-white flex items-center gap-3 mb-3 tracking-wide">
               <span className="material-symbols-outlined text-[#c5a47e] text-[22px]">
                 lock
               </span>
-              Secure Live Handshake
+              Zero-Trust Security &amp; Live API Handshake
             </h3>
-            <p className="text-xs text-white/50 mb-6 font-light">
-              High-sensitivity credentials and API tokens are exchanged over end-to-end encrypted video handshakes.
+            <p className="text-xs text-white/50 mb-6 font-light leading-relaxed">
+              To protect your business infrastructure, high-sensitivity tokens (e.g., Stripe, Twilio, Retell AI) are exchanged over end-to-end encrypted video handshakes rather than web forms.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -235,7 +129,7 @@ export const Step3Integration: React.FC<Step3Props> = ({
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-1">Payment Gateways</h4>
                   <p className="text-xs text-white/50 font-light">
-                    Merchant accounts and Stripe webhooks configured live with mutual authentication.
+                    Merchant accounts and payment links configured live with mutual authentication.
                   </p>
                   <span className="inline-block mt-3 px-2.5 py-1 bg-[#c5a47e]/10 text-[#c5a47e] text-[9px] font-bold uppercase tracking-[0.2em] rounded-md border border-[#c5a47e]/30">
                     Live Session Required
@@ -251,9 +145,9 @@ export const Step3Integration: React.FC<Step3Props> = ({
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-1">Calendar &amp; CRM Sync</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-1">Telephony &amp; CRM Sync</h4>
                   <p className="text-xs text-white/50 font-light">
-                    Direct database binding and Google/Outlook calendar slot verification.
+                    Phone numbers and carrier routing established with verified SIP trunks.
                   </p>
                   <span className="inline-block mt-3 px-2.5 py-1 bg-[#c5a47e]/10 text-[#c5a47e] text-[9px] font-bold uppercase tracking-[0.2em] rounded-md border border-[#c5a47e]/30">
                     Live Session Required
@@ -272,13 +166,13 @@ export const Step3Integration: React.FC<Step3Props> = ({
             <h3 className="text-base font-light text-white mb-6 tracking-wide">Enterprise Protocol</h3>
             <div className="space-y-6">
               <div className="flex gap-4">
-                <span className="material-symbols-outlined text-[#0f9d58] text-[22px] mt-0.5">
-                  sync
+                <span className="material-symbols-outlined text-[#c5a47e] text-[22px] mt-0.5">
+                  lan
                 </span>
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">Google Sheets Target</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">Full-Duplex Pipelines</h4>
                   <p className="text-xs text-white/50 mt-1 leading-relaxed font-light">
-                    Portal responses update in your Google Sheet immediately upon user submission with timestamped columns.
+                    Inbound callers experience sub-second audio response times with real-time intent parsing.
                   </p>
                 </div>
               </div>
@@ -287,9 +181,9 @@ export const Step3Integration: React.FC<Step3Props> = ({
                   bolt
                 </span>
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">Pre-Staged Pipelines</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">Pre-Staged Workflows</h4>
                   <p className="text-xs text-white/50 mt-1 leading-relaxed font-light">
-                    Providing your account email enables immediate asynchronous server setup.
+                    Your responses allow our solutions engineers to provision your staging environment immediately.
                   </p>
                 </div>
               </div>
@@ -300,7 +194,7 @@ export const Step3Integration: React.FC<Step3Props> = ({
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-white">Zero-Knowledge Storage</h4>
                   <p className="text-xs text-white/50 mt-1 leading-relaxed font-light">
-                    Secrets and API tokens are never saved to intermediate client forms.
+                    Your client credentials and tokens are never requested or stored inside public web forms.
                   </p>
                 </div>
               </div>
@@ -333,4 +227,3 @@ export const Step3Integration: React.FC<Step3Props> = ({
     </div>
   );
 };
-
