@@ -371,31 +371,26 @@ export const Step2ConversationalAI: React.FC<Step2Props> = ({
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6">
+      <div className="mt-12 flex items-center justify-between pt-6 border-t border-white/5">
         <button
           id="step2-back-btn"
           type="button"
           onClick={onBack}
-          className="btn-secondary w-full sm:w-auto px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center justify-center gap-2"
+          className="btn-secondary px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
           Back
         </button>
-        <div className="flex gap-4 w-full sm:w-auto">
-          <button
-            id="step2-save-btn"
-            type="button"
-            onClick={onSaveProgress}
-            className="btn-secondary hidden sm:flex px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[16px]">save</span>
-            Save Progress
-          </button>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-white/40 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Auto-saved
+          </div>
           <button
             id="step2-next-btn"
             type="button"
             onClick={onNext}
-            className="btn-gold w-full sm:w-auto px-8 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center justify-center gap-2"
+            className="btn-gold px-8 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center justify-center gap-2 shadow-lg shadow-black/40"
           >
             Next Step
             <span className="material-symbols-outlined text-[18px]">arrow_forward</span>

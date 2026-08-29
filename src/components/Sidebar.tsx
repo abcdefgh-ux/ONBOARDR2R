@@ -5,42 +5,40 @@ interface SidebarProps {
   currentStep: number;
   completedSteps: number[];
   onSelectStep: (step: number) => void;
-  onSaveAndExit: () => void;
+  onSaveAndExit?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentStep,
   completedSteps,
   onSelectStep,
-  onSaveAndExit,
 }) => {
   const progressPercent = Math.min(100, Math.max(20, currentStep * 20));
 
   return (
     <aside
       id="sidebar-navigation"
-      className="hidden md:flex flex-col h-screen w-80 fixed left-0 top-0 pt-8 pb-6 px-6 bg-[#080808]/90 backdrop-blur-2xl border-r border-white/5 z-40"
+      className="hidden md:flex flex-col h-screen w-80 fixed left-0 top-0 pt-7 pb-6 px-6 bg-[#080808]/90 backdrop-blur-2xl border-r border-white/5 z-40"
     >
-      {/* Brand Header */}
+      {/* Brand Header with Rounded, Narrower, Elongated YAAN & Co Logo */}
       <div className="mb-8 px-2">
-        <div className="w-36 mb-4">
+        <div className="w-24 h-16 p-2 bg-[#0e0e0e] border border-white/10 rounded-2xl overflow-hidden mb-4 shadow-xl shadow-black/60 flex items-center justify-center">
           <img
             src={LOGO_URL}
             alt="YAAN & Co."
-            className="w-full h-auto object-contain drop-shadow-[0_2px_12px_rgba(197,164,126,0.2)]"
+            className="max-h-full max-w-full object-contain rounded-xl drop-shadow-[0_2px_8px_rgba(197,164,126,0.3)]"
             onError={(e) => {
-              // Fallback to stylized logo text if remote image is blocked
               (e.target as HTMLElement).style.display = 'none';
             }}
           />
         </div>
-        <div className="flex items-center gap-2 mb-2">
-          <div className="h-px w-6 bg-[#c5a47e]" />
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="h-px w-5 bg-[#c5a47e]" />
           <span className="text-[10px] font-medium uppercase tracking-[0.25em] text-[#c5a47e]">
             Onboarding Portal
           </span>
         </div>
-        <h2 className="text-2xl font-light text-white tracking-tight">Ring2Rev</h2>
+        <h2 className="text-xl font-light text-white tracking-tight">Ring2Rev</h2>
       </div>
 
       {/* Steps List */}
@@ -109,13 +107,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Progress & Bottom Controls */}
+      {/* Progress & Auto-Saved Status */}
       <div className="mt-auto pt-6 border-t border-white/5">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#c5a47e] text-[16px]">
-              analytics
-            </span>
+        <div className="flex items-center justify-between mb-2.5 px-1">
+          <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">
               Progress: {progressPercent}%
             </span>
@@ -123,21 +118,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-[10px] text-white/30 tracking-[0.15em] uppercase">Step {currentStep} / 5</span>
         </div>
 
-        <div className="w-full bg-[#111111] h-1.5 rounded-full overflow-hidden mb-5 border border-white/5">
+        <div className="w-full bg-[#111111] h-1.5 rounded-full overflow-hidden mb-4 border border-white/5">
           <div
             className="bg-[#c5a47e] h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(197,164,126,0.5)]"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
 
-        <button
-          id="sidebar-save-exit-btn"
-          onClick={onSaveAndExit}
-          className="w-full btn-secondary py-3 px-4 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex justify-center items-center gap-2 text-white/80"
-        >
-          <span className="material-symbols-outlined text-[16px]">save</span>
-          Save &amp; Exit
-        </button>
+        <div className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white/[0.02] border border-white/5 text-[10px] text-white/40 font-mono text-center">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          Progress automatically saved
+        </div>
       </div>
     </aside>
   );

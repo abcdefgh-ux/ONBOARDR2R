@@ -21,13 +21,23 @@ interface SubmissionRecord {
 
 const DATA_DIR = path.join(process.cwd(), '.data');
 const SUBMISSIONS_FILE = path.join(DATA_DIR, 'submissions.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'sheets_config.json');
 
 let memorySubmissions: SubmissionRecord[] = [];
+let savedSheetsWebhookUrl = '';
 
 function initStorage() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(CONFIG_FILE)) {
+      const cfgRaw = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      const cfg = JSON.parse(cfgRaw);
+      if (cfg && cfg.sheetsWebhookUrl) {
+        savedSheetsWebhookUrl = cfg.sheetsWebhookUrl;
+        console.log(`[Storage] Loaded saved Google Sheets URL: ${savedSheetsWebhookUrl.slice(0, 35)}...`);
+      }
     }
     if (fs.existsSync(SUBMISSIONS_FILE)) {
       const raw = fs.readFileSync(SUBMISSIONS_FILE, 'utf-8');
@@ -42,6 +52,20 @@ function initStorage() {
   }
 }
 initStorage();
+
+function saveSheetsConfig(url: string) {
+  if (!url || !url.startsWith('http')) return;
+  savedSheetsWebhookUrl = url.trim();
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify({ sheetsWebhookUrl: savedSheetsWebhookUrl, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    console.log(`[Storage] Saved Google Sheets Webhook URL to disk.`);
+  } catch (err) {
+    console.error('Error saving sheets config:', err);
+  }
+}
 
 function getSubmissions(): SubmissionRecord[] {
   try {
@@ -291,10 +315,27 @@ app.post('/api/submit', async (req, res) => {
         }
       }
 
-      // 2. Google Sheets Webhook push if GOOGLE_SHEETS_WEBHOOK_URL is configured
-      const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL || (formData.slackWebhook && formData.slackWebhook.startsWith('http') ? formData.slackWebhook : undefined);
+      // 2. Google Sheets Webhook push (Automatic for ALL submissions)
+      let sheetsWebhookUrl = (
+        (formData.slackWebhook && formData.slackWebhook.startsWith('http') ? formData.slackWebhook : '') ||
+        savedSheetsWebhookUrl ||
+        process.env.GOOGLE_SHEETS_WEBHOOK_URL ||
+        ''
+      ).trim();
+
+      if (formData.slackWebhook && formData.slackWebhook.startsWith('http')) {
+        saveSheetsConfig(formData.slackWebhook);
+      }
       
       if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
+        // Automatic normalization for Google Apps Script URLs:
+        if (sheetsWebhookUrl.includes('script.google.com/macros/s/')) {
+          sheetsWebhookUrl = sheetsWebhookUrl.replace(/\/edit.*$/, '').replace(/\/dev.*$/, '');
+          if (!sheetsWebhookUrl.endsWith('/exec')) {
+            sheetsWebhookUrl = sheetsWebhookUrl.replace(/\/+$/, '') + '/exec';
+          }
+        }
+
         try {
           const scenariosSummary = (formData.scenarios || [])
             .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
@@ -334,9 +375,9 @@ app.post('/api/submit', async (req, res) => {
             signal: controller.signal,
           });
           clearTimeout(timeoutId);
-          console.log(`[Google Sheets Webhook] Push to ${sheetsWebhookUrl} resulted in: ${hookRes.status}`);
+          console.log(`[Google Sheets Webhook Auto-Push] Push to ${sheetsWebhookUrl} resulted in status: ${hookRes.status}`);
         } catch (sheetsErr: any) {
-          console.warn('[Google Sheets Webhook] Warning:', sheetsErr?.message || sheetsErr);
+          console.warn('[Google Sheets Webhook Auto-Push] Warning:', sheetsErr?.message || sheetsErr);
         }
       }
     })().catch((bgErr) => console.warn('Background worker notice:', bgErr));
@@ -431,6 +472,9 @@ app.post('/api/submissions/:id/test-webhook', async (req, res) => {
       webhookUrl = webhookUrl.replace(/\/+$/, '') + '/exec';
     }
   }
+
+  // Persist for all future automatic submissions
+  saveSheetsConfig(webhookUrl);
 
   try {
     const formData = found.data || found;

@@ -3,8 +3,8 @@ import { OnboardingState } from '../../types';
 import {
   BUILD_TIMELINE,
   CLIPBOARD_IMAGE_URL,
-  GUIDE_AVATAR_URL,
 } from '../../data/initialData';
+import { LeadAvatar } from '../LeadAvatar';
 
 interface Step5Props {
   formData: OnboardingState;
@@ -18,7 +18,6 @@ export const Step5Expectations: React.FC<Step5Props> = ({
   formData,
   onBack,
   onFinish,
-  onChange,
   isSubmitting = false,
 }) => {
   return (
@@ -28,98 +27,117 @@ export const Step5Expectations: React.FC<Step5Props> = ({
           <span className="text-[10px] uppercase font-medium tracking-[0.25em] text-[#c5a47e]">Phase 05</span>
         </div>
         <h2 className="text-3xl md:text-4xl font-light text-white tracking-tight mb-2">
-          Deployment Roadmap &amp; Final Submission
+          Review &amp; Final Submission
         </h2>
         <p className="text-sm text-white/50 font-light tracking-wide max-w-2xl">
-          Specification complete. Review the operational schedule below and submit your onboarding portal to initiate solution synthesis.
+          Review your onboarding summary below and submit your details.
         </p>
       </header>
 
       {/* Bento Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Summary Card (1 col) */}
+        {/* Summary Card */}
         <div className="glass-panel rounded-2xl p-6 md:p-7 lg:col-span-1 flex flex-col justify-between border-white/5">
           <div>
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-[#c5a47e]">
                 <span className="material-symbols-outlined text-[20px]">
                   fact_check
                 </span>
               </div>
-              <h3 className="text-base font-light text-white tracking-wide">Payload Registered</h3>
+              <h3 className="text-base font-light text-white tracking-wide">Summary</h3>
             </div>
 
             <p className="text-xs text-white/50 leading-relaxed mb-6 font-light">
-              Thank you{formData.primaryContactName ? `, ${formData.primaryContactName}` : ''}. We have structured your business hours, conversational voice parameters, {(formData.scenarios || []).length} active call scenario routes, and autonomous safety directives.
+              {formData.businessName ? `${formData.businessName}: ` : ''}
+              {(formData.scenarios || []).length} call scenario{(formData.scenarios || []).length === 1 ? '' : 's'} configured with {formData.aiTone} voice tone.
             </p>
           </div>
 
-          {/* Illustrative Clipboard Image */}
-          <div className="rounded-xl overflow-hidden h-36 relative border border-white/5 glass-card bg-black/40">
+          <div className="rounded-xl overflow-hidden h-32 relative border border-white/5 glass-card bg-black/40">
             <img
               src={CLIPBOARD_IMAGE_URL}
               alt="Verification Clipboard"
-              className="w-full h-full object-cover opacity-60 hover:scale-105 transition-transform duration-500"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
+              className="w-full h-full object-cover opacity-60"
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent flex items-end p-4">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="text-[10px] uppercase tracking-widest text-white/80 font-bold">
+                  All Systems Verified
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Timeline Card (2 cols) */}
-        <div className="glass-panel rounded-2xl p-6 md:p-8 lg:col-span-2 relative overflow-hidden border-white/5">
-          <div className="flex items-center justify-between mb-8">
+        {/* 15-Day Build Timeline */}
+        <div className="glass-panel rounded-2xl p-6 md:p-7 lg:col-span-2 border-white/5">
+          <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-[#c5a47e]">
                 <span className="material-symbols-outlined text-[20px]">
                   calendar_month
                 </span>
               </div>
-              <h3 className="text-base font-light text-white tracking-wide">14-Day Delivery Pipeline</h3>
+              <div>
+                <h3 className="text-base font-light text-white tracking-wide">
+                  15-Day Implementation Timeline
+                </h3>
+                <p className="text-xs text-white/50 font-light">
+                  Standard deployment process
+                </p>
+              </div>
             </div>
-            <span className="px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[9px] font-bold uppercase tracking-[0.2em] text-[#c5a47e]">
-              Standard SLA
+            <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#c5a47e] bg-[#c5a47e]/10 px-3 py-1.5 rounded-full border border-[#c5a47e]/20 hidden sm:inline-block">
+              15 Days
             </span>
           </div>
 
-          {/* Vertical Timeline */}
-          <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-white/10">
+          <div className="space-y-4 relative before:absolute before:inset-0 before:left-3.5 before:w-px before:bg-white/10 before:z-0">
             {BUILD_TIMELINE.map((item, idx) => (
-              <div key={idx} className="relative glass-card p-4 rounded-xl -ml-6 pl-8 hover:border-[#c5a47e]/30 transition-colors border-white/5">
+              <div key={idx} className="relative z-10 flex items-start gap-4">
                 <div
-                  className={`absolute left-[-4px] top-5 w-3 h-3 rounded-full bg-black border-2 ${
-                    idx === 0
-                      ? 'border-[#c5a47e] shadow-[0_0_10px_rgba(197,164,126,0.6)]'
-                      : 'border-white/20'
-                  } z-10`}
-                />
-                <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4 mb-1">
-                  <h4
-                    className={`text-[10px] font-bold uppercase tracking-[0.2em] ${
-                      idx === 0 ? 'text-[#c5a47e]' : 'text-white/40'
-                    }`}
-                  >
-                    {item.days}
-                  </h4>
-                  <span
-                    className={`text-sm font-medium ${
-                      item.highlight ? 'text-[#c5a47e]' : 'text-white'
-                    }`}
-                  >
-                    {item.title}
-                  </span>
+                  className={`w-7 h-7 rounded-full bg-[#050505] border flex items-center justify-center text-[10px] text-white/80 shrink-0 font-mono mt-0.5 ${
+                    item.highlight
+                      ? 'border-[#c5a47e] text-[#c5a47e] shadow-[0_0_10px_rgba(197,164,126,0.3)]'
+                      : 'border-white/10 text-white/50'
+                  }`}
+                >
+                  {idx + 1}
                 </div>
-                <p className="text-xs text-white/50 leading-normal font-light">{item.description}</p>
+                <div
+                  className={`flex-1 p-3.5 rounded-xl border transition-all ${
+                    item.highlight
+                      ? 'bg-white/[0.04] border-[#c5a47e]/30'
+                      : 'bg-[#080808]/80 border-white/5'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
+                    <span className="text-xs font-semibold text-white tracking-wide">
+                      {item.title}
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono ${
+                        item.highlight ? 'text-[#c5a47e] font-bold' : 'text-white/40'
+                      }`}
+                    >
+                      {item.days}
+                    </span>
+                  </div>
+                  <p className="text-xs text-white/50 font-light leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Contact Guide Card (1 col) */}
-        <div className="glass-panel rounded-2xl p-6 lg:col-span-1 flex flex-col justify-between border-white/5">
+        {/* Implementation Lead (with photo attached by user) */}
+        <div className="glass-panel rounded-2xl p-6 md:p-7 lg:col-span-1 border-white/5 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-[#c5a47e]">
                 <span className="material-symbols-outlined text-[20px]">
                   support_agent
@@ -128,39 +146,30 @@ export const Step5Expectations: React.FC<Step5Props> = ({
               <h3 className="text-base font-light text-white tracking-wide">Implementation Lead</h3>
             </div>
 
-            <div className="flex flex-col items-center text-center p-6 glass-card rounded-xl mb-6 border-white/5">
-              <div className="w-20 h-20 rounded-full mb-4 border border-[#c5a47e]/40 overflow-hidden shadow-xl shadow-black/40 p-0.5">
-                <img
-                  src={GUIDE_AVATAR_URL}
-                  alt="Lead"
-                  className="w-full h-full object-cover rounded-full"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
-              <h4 className="text-base font-light text-white mb-0.5">Shayan Ali Zafar</h4>
+            <div className="flex flex-col items-center text-center p-5 glass-card rounded-2xl mb-4 border-white/5 bg-black/40">
+              <LeadAvatar className="mb-3" />
+              <h4 className="text-sm font-medium text-white mb-0.5">Shayan Ali Zafar</h4>
               <p className="text-[9px] font-bold text-[#c5a47e] uppercase tracking-[0.2em] mb-2">
-                Solutions Architecture Lead
+                Solutions Lead
               </p>
-              <span className="inline-flex items-center gap-1.5 text-xs text-white/50 bg-white/5 px-3 py-1 rounded-full border border-white/5">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-white/50 bg-white/5 px-3 py-1 rounded-full border border-white/5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                Ring2Rev Engineering Team
+                Ring2Rev Engineering
               </span>
             </div>
           </div>
 
-          <div className="p-4 glass-card rounded-xl border-white/5">
-            <p className="text-xs text-white/50 flex gap-2.5 items-start leading-relaxed font-light">
-              <span className="material-symbols-outlined text-[#c5a47e] text-[16px] mt-0.5 shrink-0">
+          <div className="p-3.5 glass-card rounded-xl border-white/5">
+            <p className="text-[11px] text-white/50 flex gap-2 items-start leading-relaxed font-light">
+              <span className="material-symbols-outlined text-[#c5a47e] text-[15px] mt-0.5 shrink-0">
                 info
               </span>
-              <span>Our solutions engineering team will review your responses and reach out to schedule your live API key pairing session.</span>
+              <span>Our engineering team will review your submission and contact you for live testing.</span>
             </p>
           </div>
         </div>
 
-        {/* Submission Confirmation Panel (2 cols) */}
+        {/* Submission Confirmation Panel */}
         <div className="glass-panel rounded-2xl p-6 md:p-7 lg:col-span-2 border-white/5 bg-[#080808] flex flex-col justify-between">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-xl bg-[#c5a47e]/10 border border-[#c5a47e]/30 flex items-center justify-center text-[#c5a47e] shrink-0 mt-0.5">
@@ -168,43 +177,28 @@ export const Step5Expectations: React.FC<Step5Props> = ({
             </div>
             <div>
               <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white mb-1">
-                Specification Ready For Engineering Synthesis
+                Ready for Submission
               </h3>
               <p className="text-xs text-white/50 font-light leading-relaxed mb-4">
-                Submitting this portal finalizes your onboarding blueprint. You will receive an instant on-screen receipt and downloadable specification transcript.
+                Submit your onboarding form to initiate your build.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-black/60 border border-white/5">
-                  <span className="text-[10px] text-white/40 uppercase tracking-wider block mb-1">Primary Submitter</span>
-                  <span className="font-mono text-white text-xs">
-                    {formData.primaryContactEmail || 'Contact Email Provided'}
+                  <span className="text-[9px] text-white/40 uppercase tracking-wider block mb-1">Contact Email</span>
+                  <span className="font-mono text-white text-xs truncate block">
+                    {formData.primaryContactEmail || 'Email provided'}
                   </span>
                 </div>
                 <div className="p-3 rounded-xl bg-black/60 border border-white/5">
-                  <span className="text-[10px] text-white/40 uppercase tracking-wider block mb-1">Configured Scope</span>
-                  <span className="text-white text-xs">
-                    {formData.businessName || 'Business Blueprint'} • {(formData.scenarios || []).length} Call Scenarios
+                  <span className="text-[9px] text-white/40 uppercase tracking-wider block mb-1">Assigned Lead</span>
+                  <span className="text-white text-xs font-medium block">
+                    Shayan Ali Zafar (Solutions Lead)
                   </span>
                 </div>
               </div>
             </div>
           </div>
-
-          {onChange && (
-            <div className="mt-4 pt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <span className="text-[10px] uppercase tracking-[0.15em] text-[#c5a47e] font-medium">
-                CC Confirmation Email (Optional)
-              </span>
-              <input
-                type="email"
-                value={formData.additionalCopyEmails || ''}
-                onChange={(e) => onChange('additionalCopyEmails', e.target.value)}
-                placeholder="colleague@yourcompany.com"
-                className="rounded-xl glass-input px-3.5 py-2 text-white text-xs font-mono w-full sm:w-72"
-              />
-            </div>
-          )}
         </div>
       </div>
 
@@ -221,25 +215,31 @@ export const Step5Expectations: React.FC<Step5Props> = ({
           Back
         </button>
 
-        <button
-          id="step5-finish-btn"
-          type="button"
-          disabled={isSubmitting}
-          onClick={onFinish}
-          className="btn-gold px-9 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2 shadow-xl shadow-black/50 disabled:opacity-75"
-        >
-          {isSubmitting ? (
-            <>
-              <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-              Submitting Portal...
-            </>
-          ) : (
-            <>
-              Complete &amp; Submit Portal
-              <span className="material-symbols-outlined text-[18px]">done_all</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-white/40 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Auto-saved
+          </div>
+          <button
+            id="step5-finish-btn"
+            type="button"
+            disabled={isSubmitting}
+            onClick={onFinish}
+            className="btn-gold px-9 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center gap-2 shadow-xl shadow-black/50 disabled:opacity-75"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                Submitting...
+              </>
+            ) : (
+              <>
+                Submit Form
+                <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -336,11 +336,8 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
       <div className="flex-1 md:ml-80 min-h-screen flex flex-col relative z-10">
         <Header
           currentStep={formData.currentStep}
-          onSaveProgress={handleSaveProgress}
-          onOpenHelp={() => setIsHelpOpen(true)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           onOpenSubmissions={() => setIsSubmissionsOpen(true)}
-          lastSavedAt={formData.lastSavedAt}
         />
 
         <main className="flex-1 p-4 md:p-10 lg:p-12 w-full">
@@ -349,7 +346,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
               formData={formData}
               onChange={handleFieldChange}
               onNext={handleNext}
-              onSaveProgress={handleSaveProgress}
             />
           )}
 
@@ -359,7 +355,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
               onChange={handleFieldChange}
               onNext={handleNext}
               onBack={handleBack}
-              onSaveProgress={handleSaveProgress}
             />
           )}
 
@@ -369,7 +364,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
               onChange={handleFieldChange}
               onNext={handleNext}
               onBack={handleBack}
-              onSaveProgress={handleSaveProgress}
             />
           )}
 
@@ -379,7 +373,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
               onChange={handleFieldChange}
               onNext={handleNext}
               onBack={handleBack}
-              onSaveProgress={handleSaveProgress}
             />
           )}
 

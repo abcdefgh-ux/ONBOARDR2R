@@ -5,14 +5,13 @@ interface Step1Props {
   formData: OnboardingState;
   onChange: (field: keyof OnboardingState, value: any) => void;
   onNext: () => void;
-  onSaveProgress: () => void;
+  onSaveProgress?: () => void;
 }
 
 export const Step1BasicInfo: React.FC<Step1Props> = ({
   formData,
   onChange,
   onNext,
-  onSaveProgress,
 }) => {
   return (
     <div className="max-w-4xl w-full mx-auto pb-32">
@@ -24,7 +23,7 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
           Basic Business Information
         </h2>
         <p className="text-sm text-white/50 font-light tracking-wide">
-          Establish the foundational credentials and operational parameters for your Ring2Rev instance.
+          Establish foundational business parameters for your AI voice assistant.
         </p>
       </div>
 
@@ -44,7 +43,7 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
                 type="text"
                 value={formData.businessName}
                 onChange={(e) => onChange('businessName', e.target.value)}
-                placeholder="e.g., Acme Corp"
+                placeholder="e.g., Acme Services"
                 className="w-full rounded-xl glass-input p-3.5 text-white text-sm"
               />
             </div>
@@ -69,7 +68,7 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
           <h3 className="text-lg font-light text-white mb-6 border-b border-white/5 pb-4 tracking-wide">
             Primary Contact
           </h3>
-          <div className="space-y-5">
+          <div className="space-y-4">
             <div>
               <label htmlFor="contact-name" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e] mb-2">
                 Full Name
@@ -79,7 +78,7 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
                 type="text"
                 value={formData.primaryContactName}
                 onChange={(e) => onChange('primaryContactName', e.target.value)}
-                placeholder="Jane Doe"
+                placeholder="John Doe"
                 className="w-full rounded-xl glass-input p-3.5 text-white text-sm"
               />
             </div>
@@ -92,13 +91,13 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
                 type="email"
                 value={formData.primaryContactEmail}
                 onChange={(e) => onChange('primaryContactEmail', e.target.value)}
-                placeholder="jane@example.com"
+                placeholder="john@example.com"
                 className="w-full rounded-xl glass-input p-3.5 text-white text-sm"
               />
             </div>
             <div>
               <label htmlFor="contact-phone" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e] mb-2">
-                Direct Phone
+                Direct Phone / Mobile (Optional)
               </label>
               <input
                 id="contact-phone"
@@ -112,36 +111,36 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
           </div>
         </section>
 
-        {/* Operations */}
-        <section className="glass-panel rounded-2xl p-6 md:p-8 flex flex-col justify-between border-white/5">
+        {/* Operations & Location */}
+        <section className="glass-panel rounded-2xl p-6 md:p-8 border-white/5 flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-light text-white mb-6 border-b border-white/5 pb-4 tracking-wide">
-              Operations
+              Operations &amp; Location
             </h3>
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div>
                 <label htmlFor="service-area" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e] mb-2">
                   Service Area (Zip Codes / Radius)
                 </label>
                 <textarea
                   id="service-area"
-                  rows={3}
+                  rows={2}
                   value={formData.serviceArea}
                   onChange={(e) => onChange('serviceArea', e.target.value)}
-                  placeholder="e.g., 90210, 50-mile radius from HQ"
+                  placeholder="e.g., 90210, 50-mile radius"
                   className="w-full rounded-xl glass-input p-3.5 text-white text-sm resize-none"
                 />
               </div>
               <div>
                 <label htmlFor="business-hours" className="block text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e] mb-2">
-                  Business Hours (Regular &amp; Emergency)
+                  Business Hours
                 </label>
                 <textarea
                   id="business-hours"
-                  rows={3}
+                  rows={2}
                   value={formData.businessHours}
                   onChange={(e) => onChange('businessHours', e.target.value)}
-                  placeholder="Mon-Fri: 9am-5pm. Emergency: 24/7"
+                  placeholder="Mon-Fri: 9am-5pm"
                   className="w-full rounded-xl glass-input p-3.5 text-white text-sm resize-none"
                 />
               </div>
@@ -151,20 +150,16 @@ export const Step1BasicInfo: React.FC<Step1Props> = ({
       </div>
 
       {/* Bottom Actions */}
-      <div className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6">
-        <button
-          id="step1-save-btn"
-          type="button"
-          onClick={onSaveProgress}
-          className="btn-secondary w-full sm:w-auto px-6 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold"
-        >
-          Save Progress
-        </button>
+      <div className="mt-12 flex items-center justify-between pt-6 border-t border-white/5">
+        <div className="flex items-center gap-1.5 text-[10px] text-white/40 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          Auto-saved
+        </div>
         <button
           id="step1-next-btn"
           type="button"
           onClick={onNext}
-          className="btn-gold w-full sm:w-auto px-8 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center justify-center gap-2"
+          className="btn-gold px-8 py-3.5 rounded-xl text-[10px] uppercase tracking-[0.2em] font-bold flex items-center justify-center gap-2 shadow-lg shadow-black/40"
         >
           Next Step
           <span className="material-symbols-outlined text-[18px]">arrow_forward</span>

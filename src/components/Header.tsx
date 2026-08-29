@@ -3,20 +3,14 @@ import { STEP_CONFIG } from '../data/initialData';
 
 interface HeaderProps {
   currentStep: number;
-  onSaveProgress: () => void;
-  onOpenHelp: () => void;
   onOpenMobileMenu: () => void;
   onOpenSubmissions?: () => void;
-  lastSavedAt: string | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentStep,
-  onSaveProgress,
-  onOpenHelp,
   onOpenMobileMenu,
   onOpenSubmissions,
-  lastSavedAt,
 }) => {
   const currentConfig = STEP_CONFIG.find((s) => s.step === currentStep) || STEP_CONFIG[0];
 
@@ -57,22 +51,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="material-symbols-outlined text-[20px]">outgoing_mail</span>
             </button>
           )}
-          <button
-            id="mobile-help-btn"
-            onClick={onOpenHelp}
-            className="p-2 text-white/50 hover:text-[#c5a47e]"
-            title="Help"
-          >
-            <span className="material-symbols-outlined text-[20px]">help</span>
-          </button>
-          <button
-            id="mobile-save-btn"
-            onClick={onSaveProgress}
-            className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white/80 font-medium flex items-center gap-1 hover:border-[#c5a47e]/50"
-          >
-            <span className="material-symbols-outlined text-[16px]">save</span>
-            Save
-          </button>
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/[0.03] border border-white/5 text-[9px] text-white/40 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Auto-saved
+          </div>
         </div>
       </header>
 
@@ -93,50 +75,22 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
-          {lastSavedAt && (
-            <span className="text-xs text-white/40 flex items-center gap-1.5 font-light tracking-wide mr-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#c5a47e]"></span>
-              Saved {lastSavedAt}
-            </span>
-          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/5 text-[11px] text-white/40 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Progress automatically saved
+          </div>
 
           {onOpenSubmissions && (
             <button
               id="header-submissions-btn"
               onClick={onOpenSubmissions}
-              className="text-[11px] uppercase tracking-[0.15em] font-medium text-[#c5a47e] hover:text-white transition-colors px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-1.5"
+              className="text-[11px] uppercase tracking-[0.15em] font-medium text-[#c5a47e] hover:text-white transition-colors px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-1.5"
               title="View all received response copies"
             >
               <span className="material-symbols-outlined text-[16px]">outgoing_mail</span>
               Response Copies
             </button>
           )}
-
-          <button
-            id="header-save-progress-btn"
-            onClick={onSaveProgress}
-            className="text-[11px] uppercase tracking-[0.15em] font-medium text-white/70 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5 flex items-center gap-1.5"
-          >
-            <span className="material-symbols-outlined text-[16px]">save</span>
-            Save Progress
-          </button>
-
-          <button
-            id="header-help-btn"
-            onClick={onOpenHelp}
-            className="text-[11px] uppercase tracking-[0.15em] font-medium text-white/70 hover:text-[#c5a47e] transition-colors flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-white/5"
-          >
-            <span className="material-symbols-outlined text-[#c5a47e] text-[18px]">help</span>
-            Help
-          </button>
-
-          <div
-            id="header-user-avatar"
-            className="w-9 h-9 rounded-full bg-[#111111] border border-white/10 flex items-center justify-center text-white/70 shadow-md shadow-black/40 hover:border-[#c5a47e]/40 transition-colors"
-            title="Client Portal Account"
-          >
-            <span className="material-symbols-outlined text-[18px]">person</span>
-          </div>
         </div>
       </header>
     </>
