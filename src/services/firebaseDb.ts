@@ -12,6 +12,15 @@ export interface FirestoreSubmissionRecord {
   data: any;
   webhookSent: boolean;
   summaryText: string;
+  driveSyncResult?: {
+    success: boolean;
+    folderLink?: string;
+    folderName?: string;
+    webViewLink?: string;
+    fileName?: string;
+    kbDocsCount?: number;
+    syncedAt?: string;
+  };
 }
 
 /**
@@ -34,7 +43,7 @@ export async function saveSubmissionToFirestore(submission: FirestoreSubmissionR
       }));
     }
 
-    await setDoc(docRef, {
+    const payload: any = {
       id: submission.id,
       submittedAt: submission.submittedAt,
       recipientEmails: submission.recipientEmails || [],
@@ -42,7 +51,13 @@ export async function saveSubmissionToFirestore(submission: FirestoreSubmissionR
       webhookSent: submission.webhookSent || false,
       summaryText: submission.summaryText || '',
       createdAt: new Date().toISOString(),
-    }, { merge: true });
+    };
+
+    if (submission.driveSyncResult) {
+      payload.driveSyncResult = submission.driveSyncResult;
+    }
+
+    await setDoc(docRef, payload, { merge: true });
 
     console.log(`[Firestore] Successfully saved submission ${submission.id} to Cloud Firestore.`);
     return true;
@@ -72,6 +87,7 @@ export async function fetchSubmissionsFromFirestore(): Promise<FirestoreSubmissi
           data: data.data || {},
           webhookSent: !!data.webhookSent,
           summaryText: data.summaryText || '',
+          driveSyncResult: data.driveSyncResult,
         });
       }
     });

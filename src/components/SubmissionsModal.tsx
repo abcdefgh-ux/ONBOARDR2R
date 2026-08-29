@@ -18,6 +18,15 @@ interface SubmissionItem {
   data: any;
   webhookSent: boolean;
   summaryText: string;
+  driveSyncResult?: {
+    success: boolean;
+    folderLink?: string;
+    folderName?: string;
+    webViewLink?: string;
+    fileName?: string;
+    kbDocsCount?: number;
+    syncedAt?: string;
+  };
 }
 
 interface SubmissionsModalProps {
@@ -52,6 +61,8 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [googleUser, setGoogleUser] = useState<DriveConnectedUser | null>(() => getStoredDriveUser());
   const [isDriveConnecting, setIsDriveConnecting] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
+  const [isBatchSyncing, setIsBatchSyncing] = useState(false);
+  const [batchSyncProgress, setBatchSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
   const MASTER_PASSWORD = 'Qwerty';
 
@@ -78,6 +89,86 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     } catch (err) {
       console.warn('Logout note:', err);
     }
+  };
+
+  const handleSyncSingleToDrive = async (submission: SubmissionItem) => {
+    setUploadingDriveId(submission.id);
+    try {
+      const res = await uploadOnboardingPdfToDrive({
+        formData: submission.data || {},
+        submissionId: submission.id,
+        submittedAt: submission.submittedAt,
+      });
+
+      setDriveUploadResults((prev) => ({
+        ...prev,
+        [submission.id]: res,
+      }));
+
+      if (res.success) {
+        // Persist to Cloud Firestore
+        saveSubmissionToFirestore({
+          ...submission,
+          driveSyncResult: {
+            success: true,
+            folderLink: res.folderLink,
+            folderName: res.folderName,
+            webViewLink: res.webViewLink,
+            fileName: res.fileName,
+            kbDocsCount: res.kbDocsCount,
+            syncedAt: new Date().toISOString(),
+          },
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error('Drive upload error:', err);
+      setDriveError(err.message || 'Drive sync failed.');
+    } finally {
+      setUploadingDriveId(null);
+    }
+  };
+
+  const handleSyncAllToDrive = async () => {
+    if (submissions.length === 0 || isBatchSyncing) return;
+    setIsBatchSyncing(true);
+    setBatchSyncProgress({ current: 0, total: submissions.length });
+
+    for (let i = 0; i < submissions.length; i++) {
+      const sub = submissions[i];
+      setBatchSyncProgress({ current: i + 1, total: submissions.length });
+      try {
+        const res = await uploadOnboardingPdfToDrive({
+          formData: sub.data || {},
+          submissionId: sub.id,
+          submittedAt: sub.submittedAt,
+        });
+
+        if (res.success) {
+          setDriveUploadResults((prev) => ({
+            ...prev,
+            [sub.id]: res,
+          }));
+
+          saveSubmissionToFirestore({
+            ...sub,
+            driveSyncResult: {
+              success: true,
+              folderLink: res.folderLink,
+              folderName: res.folderName,
+              webViewLink: res.webViewLink,
+              fileName: res.fileName,
+              kbDocsCount: res.kbDocsCount,
+              syncedAt: new Date().toISOString(),
+            },
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn(`Sync failed for ${sub.id}:`, err);
+      }
+    }
+
+    setIsBatchSyncing(false);
+    setBatchSyncProgress(null);
   };
 
   useEffect(() => {
@@ -210,6 +301,22 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     const combined = Array.from(mergedMap.values()).sort(
       (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
     );
+
+    // Populate drive upload results cache
+    const initialDriveResults: Record<string, DriveUploadResult> = {};
+    combined.forEach((sub) => {
+      if (sub.driveSyncResult && sub.driveSyncResult.success) {
+        initialDriveResults[sub.id] = {
+          success: true,
+          folderLink: sub.driveSyncResult.folderLink,
+          folderName: sub.driveSyncResult.folderName,
+          webViewLink: sub.driveSyncResult.webViewLink,
+          fileName: sub.driveSyncResult.fileName,
+          kbDocsCount: sub.driveSyncResult.kbDocsCount,
+        };
+      }
+    });
+    setDriveUploadResults((prev) => ({ ...initialDriveResults, ...prev }));
 
     setSubmissions(combined);
     if (combined.length > 0) {
@@ -613,6 +720,46 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
           <div className="flex-1 flex flex-col md:flex-row gap-6 mt-4 overflow-hidden">
             {/* Left Column: Submissions List */}
             <div className="w-full md:w-1/3 flex flex-col border-b md:border-b-0 md:border-r border-white/5 pr-0 md:pr-4 overflow-hidden">
+              {/* Google Drive Status & Batch Sync Banner */}
+              {googleUser && (
+                <div className="mb-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-300 font-medium truncate">
+                      <span className="material-symbols-outlined text-[15px]">folder_shared</span>
+                      <span className="truncate">Auto-Sync: {googleUser.email ? googleUser.email.split('@')[0] : 'Drive Active'}</span>
+                    </div>
+                    <a
+                      href="https://drive.google.com/drive/home"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-emerald-400 hover:text-emerald-200 underline flex items-center gap-0.5"
+                    >
+                      Open Drive
+                      <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                    </a>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-emerald-500/15">
+                    <span className="text-[10px] text-emerald-200/70">
+                      Auto-creates folder per client
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSyncAllToDrive}
+                      disabled={isBatchSyncing || submissions.length === 0}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1 transition-all disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">
+                        {isBatchSyncing ? 'progress_activity' : 'sync'}
+                      </span>
+                      {isBatchSyncing
+                        ? `Syncing (${batchSyncProgress?.current}/${batchSyncProgress?.total})...`
+                        : 'Sync All to Drive'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e]">
                   Received ({submissions.length})
@@ -686,15 +833,23 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                         <div className="text-[11px] text-white/40 truncate">
                           {sub.data?.primaryContactName || sub.data?.primaryContactEmail || sub.id}
                         </div>
-                        <div className="flex items-center gap-2 mt-2 text-[10px] text-white/30">
-                          <span>Tone: {sub.data?.aiTone || 'Pro'}</span>
-                          <span>•</span>
-                          <span>{(sub.data?.scenarios || []).length} scenarios</span>
-                          {docCount > 0 && (
-                            <>
-                              <span>•</span>
-                              <span className="text-[#c5a47e]">{docCount} docs</span>
-                            </>
+                        <div className="flex items-center justify-between mt-2 text-[10px] text-white/30">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span>Tone: {sub.data?.aiTone || 'Pro'}</span>
+                            <span>•</span>
+                            <span>{(sub.data?.scenarios || []).length} scenarios</span>
+                            {docCount > 0 && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[#c5a47e]">{docCount} docs</span>
+                              </>
+                            )}
+                          </div>
+                          {driveUploadResults[sub.id]?.success && (
+                            <span className="text-emerald-400 flex items-center gap-0.5 text-[9px] font-medium shrink-0" title="Synced to Google Drive">
+                              <span className="material-symbols-outlined text-[12px]">folder_shared</span>
+                              Drive
+                            </span>
                           )}
                         </div>
                       </div>
@@ -718,50 +873,31 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Google Drive Upload Button */}
+                    {/* Google Drive Dedicated Folder / Sync Button */}
                     {selectedSubmission && driveUploadResults[selectedSubmission.id]?.success ? (
                       <a
-                        href={driveUploadResults[selectedSubmission.id].webViewLink}
+                        href={driveUploadResults[selectedSubmission.id].folderLink || driveUploadResults[selectedSubmission.id].webViewLink}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1.5 border border-emerald-500/40 transition-all font-medium"
-                        title="View in Google Drive"
+                        title="Open Dedicated Client Folder in Google Drive"
                       >
-                        <span className="material-symbols-outlined text-[16px]">
-                          {driveUploadResults[selectedSubmission.id]?.folderLink ? 'folder_shared' : 'open_in_new'}
-                        </span>
-                        {driveUploadResults[selectedSubmission.id]?.folderLink ? 'Drive Folder' : 'In Drive'}
+                        <span className="material-symbols-outlined text-[16px]">folder_shared</span>
+                        Open Drive Folder
+                        <span className="material-symbols-outlined text-[12px]">open_in_new</span>
                       </a>
                     ) : (
                       <button
                         type="button"
-                        onClick={async () => {
-                          if (!selectedSubmission) return;
-                          setUploadingDriveId(selectedSubmission.id);
-                          try {
-                            const res = await uploadOnboardingPdfToDrive({
-                              formData: selectedSubmission.data || {},
-                              submissionId: selectedSubmission.id,
-                              submittedAt: selectedSubmission.submittedAt,
-                            });
-                            setDriveUploadResults((prev) => ({
-                              ...prev,
-                              [selectedSubmission.id]: res,
-                            }));
-                          } catch (err) {
-                            console.error('Drive upload error:', err);
-                          } finally {
-                            setUploadingDriveId(null);
-                          }
-                        }}
+                        onClick={() => selectedSubmission && handleSyncSingleToDrive(selectedSubmission)}
                         disabled={uploadingDriveId === selectedSubmission?.id}
                         className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-200 text-xs flex items-center gap-1.5 border border-emerald-500/20 transition-all font-medium disabled:opacity-50"
-                        title="Save PDF and all Knowledge Base assets directly to your Google Drive"
+                        title="Create dedicated Google Drive folder with summary PDF and all uploaded files"
                       >
                         <span className="material-symbols-outlined text-[16px]">
                           {uploadingDriveId === selectedSubmission?.id ? 'progress_activity' : 'add_to_drive'}
                         </span>
-                        {uploadingDriveId === selectedSubmission?.id ? 'Saving...' : 'Sync Drive'}
+                        {uploadingDriveId === selectedSubmission?.id ? 'Creating Folder...' : 'Sync to Google Drive'}
                       </button>
                     )}
 
@@ -802,6 +938,52 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                     </button>
                   </div>
                 </div>
+
+                {/* Dedicated Google Drive Client Folder Card */}
+                {selectedSubmission && driveUploadResults[selectedSubmission.id]?.success && (
+                  <div className="my-3 p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 font-medium text-emerald-300">
+                        <span className="material-symbols-outlined text-[18px]">folder_shared</span>
+                        <span>Google Drive Client Folder</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-400/80 font-mono">
+                        Ring2Rev Onboarding Records / {driveUploadResults[selectedSubmission.id]?.folderName || selectedSubmission.data?.businessName}
+                      </span>
+                    </div>
+
+                    <p className="text-emerald-200/80 text-[11px] mb-2.5 leading-relaxed">
+                      A dedicated folder for this client is synchronized in your Google Drive, containing the formatted specification PDF and all client-provided files.
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {driveUploadResults[selectedSubmission.id]?.folderLink && (
+                        <a
+                          href={driveUploadResults[selectedSubmission.id].folderLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-500/50 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">folder_open</span>
+                          Open Dedicated Folder
+                          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                        </a>
+                      )}
+                      {driveUploadResults[selectedSubmission.id]?.webViewLink && (
+                        <a
+                          href={driveUploadResults[selectedSubmission.id].webViewLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-medium flex items-center gap-1.5 transition-all"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                          View PDF in Drive
+                          <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Uploaded Knowledge Documents Section */}
                 {(selectedSubmission.data?.uploadedDocs || []).length > 0 && (
