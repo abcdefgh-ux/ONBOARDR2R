@@ -296,12 +296,22 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64Data = (reader.result as string)?.split(',')[1];
+              // Format uploadedDocs with base64 data for Drive file upload
+              const uploadedDocsPayload = (formData.uploadedDocs || []).map((doc) => ({
+                name: doc.name,
+                type: doc.type,
+                size: doc.size,
+                base64: doc.dataUrl || doc.url || '',
+              }));
+
               sendToGoogleAppsScriptWebhook(
                 appsScriptUrl,
                 {
                   id: finalSubId,
                   submittedAt: finalSubDate,
                   formData,
+                  uploadedDocs: uploadedDocsPayload,
+                  kbArticles: formData.kbArticles || [],
                   businessName: formData.businessName || 'Client',
                   primaryContactName: formData.primaryContactName || '',
                   primaryContactEmail: formData.primaryContactEmail || '',

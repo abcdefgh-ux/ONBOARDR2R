@@ -177,12 +177,21 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64Data = (reader.result as string)?.split(',')[1];
+        const uploadedDocsPayload = (submission.data?.uploadedDocs || []).map((doc: any) => ({
+          name: doc.name,
+          type: doc.type,
+          size: doc.size,
+          base64: doc.dataUrl || doc.url || '',
+        }));
+
         const res = await sendToGoogleAppsScriptWebhook(
           url,
           {
             id: submission.id,
             submittedAt: submission.submittedAt,
             formData: submission.data,
+            uploadedDocs: uploadedDocsPayload,
+            kbArticles: submission.data?.kbArticles || [],
             businessName: submission.data?.businessName || 'Client',
             primaryContactName: submission.data?.primaryContactName || '',
             primaryContactEmail: submission.data?.primaryContactEmail || '',
@@ -234,12 +243,21 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64Data = (reader.result as string)?.split(',')[1];
+            const uploadedDocsPayload = (sub.data?.uploadedDocs || []).map((doc: any) => ({
+              name: doc.name,
+              type: doc.type,
+              size: doc.size,
+              base64: doc.dataUrl || doc.url || '',
+            }));
+
             await sendToGoogleAppsScriptWebhook(
               url,
               {
                 id: sub.id,
                 submittedAt: sub.submittedAt,
                 formData: sub.data,
+                uploadedDocs: uploadedDocsPayload,
+                kbArticles: sub.data?.kbArticles || [],
                 businessName: sub.data?.businessName || 'Client',
               },
               base64Data
@@ -338,15 +356,38 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
     var folderName = clientName + " - " + (data.id || new Date().toISOString().substring(0, 10));
     var clientFolder = parent.createFolder(folderName);
     
-    // 1. Save Generated PDF
+    // 1. Save Generated PDF Summary
     if (data.pdfBase64) {
       var decoded = Utilities.base64Decode(data.pdfBase64);
       var blob = Utilities.newBlob(decoded, "application/pdf", clientName + "_Onboarding_Summary.pdf");
       clientFolder.createFile(blob);
     }
     
-    // 2. Save Client JSON Data
-    clientFolder.createFile("client_data.json", JSON.stringify(data, null, 2), "application/json");
+    // 2. Save Uploaded Knowledge Base Documents As-Is
+    var uploadedDocs = data.uploadedDocs || (data.formData && data.formData.uploadedDocs) || [];
+    for (var i = 0; i < uploadedDocs.length; i++) {
+      var docItem = uploadedDocs[i];
+      var rawBase64 = docItem.base64 || docItem.data;
+      if (rawBase64) {
+        try {
+          if (rawBase64.indexOf(",") > -1) { rawBase64 = rawBase64.split(",")[1]; }
+          var decodedDoc = Utilities.base64Decode(rawBase64);
+          var fileBlob = Utilities.newBlob(decodedDoc, docItem.type || "application/octet-stream", docItem.name || ("Document_" + (i + 1)));
+          clientFolder.createFile(fileBlob);
+        } catch(e) {}
+      }
+    }
+    
+    // 3. Save Knowledge Base Articles/FAQs if any
+    var kbArticles = data.kbArticles || (data.formData && data.formData.kbArticles) || [];
+    if (kbArticles.length > 0) {
+      var kbContent = "=== KNOWLEDGE BASE ARTICLES ===\\n\\n";
+      for (var k = 0; k < kbArticles.length; k++) {
+        kbContent += "TITLE: " + kbArticles[k].title + "\\n" + kbArticles[k].content + "\\n\\n-------------------\\n\\n";
+      }
+      var kbBlob = Utilities.newBlob(kbContent, "text/plain", "Knowledge_Base_Notes.txt");
+      clientFolder.createFile(kbBlob);
+    }
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -355,7 +396,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
-}`;
+};`;
 
   const filteredSubmissions = submissions.filter((s) => {
     if (!searchQuery) return true;
