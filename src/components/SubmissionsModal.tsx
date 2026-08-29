@@ -62,13 +62,69 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/submissions');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.submissions)) {
-        setSubmissions(data.submissions);
-        if (data.submissions.length > 0 && !selectedSubmission) {
-          setSelectedSubmission(data.submissions[0]);
+      // 1. Fetch from server
+      let serverList: SubmissionItem[] = [];
+      try {
+        const res = await fetch('/api/submissions');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.submissions)) {
+            serverList = data.submissions;
+          }
         }
+      } catch (e) {
+        console.warn('Server fetch notice:', e);
+      }
+
+      // 2. Read from localStorage backup archive
+      let localList: SubmissionItem[] = [];
+      try {
+        const rawLocal = localStorage.getItem('ring2rev_submissions_history');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) {
+            localList = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('LocalStorage parse notice:', e);
+      }
+
+      // 3. Merge seamlessly by ID (prefer server items, add missing local items)
+      const mergedMap = new Map<string, SubmissionItem>();
+      for (const item of serverList) {
+        if (item && item.id) mergedMap.set(item.id, item);
+      }
+      for (const item of localList) {
+        if (item && item.id && !mergedMap.has(item.id)) {
+          mergedMap.set(item.id, item);
+        }
+      }
+
+      const combined = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+      );
+
+      setSubmissions(combined);
+      if (combined.length > 0) {
+        setSelectedSubmission((prev) => {
+          if (prev && combined.some((c) => c.id === prev.id)) {
+            return prev;
+          }
+          return combined[0];
+        });
+      } else {
+        setSelectedSubmission(null);
+      }
+
+      // 4. If any local items are missing from server, sync them to server
+      const missingOnServer = localList.filter((loc) => !serverList.some((srv) => srv.id === loc.id));
+      if (missingOnServer.length > 0) {
+        fetch('/api/submissions/sync-local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: missingOnServer }),
+        }).catch((syncErr) => console.warn('Background sync notice:', syncErr));
       }
     } catch (err) {
       console.error('Failed to fetch submissions:', err);
@@ -151,6 +207,15 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchSubmissions}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white flex items-center gap-1.5 transition-colors font-medium"
+              title="Refresh and sync submissions"
+            >
+              <span className={`material-symbols-outlined text-[16px] ${loading ? 'animate-spin' : ''}`}>sync</span>
+              Sync
+            </button>
             <a
               href="/api/submissions/export.csv"
               download="ring2rev-submissions.csv"
@@ -158,7 +223,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
               title="Download full CSV of all submissions"
             >
               <span className="material-symbols-outlined text-[16px]">file_download</span>
-              Download CSV
+              CSV
             </a>
             <button
               type="button"
@@ -169,11 +234,11 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
               <span className="material-symbols-outlined text-[16px]">
                 {copiedFormula ? 'check' : 'table_view'}
               </span>
-              {copiedFormula ? 'Copied =IMPORTDATA!' : 'Copy Sheets Formula'}
+              {copiedFormula ? 'Copied!' : 'Sheets Formula'}
             </button>
             <button
               onClick={onClose}
-              className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors ml-2"
+              className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors ml-1"
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
@@ -181,20 +246,28 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Content Body */}
-        {loading ? (
+        {loading && submissions.length === 0 ? (
           <div className="flex-1 flex items-center justify-center py-20 text-white/40 text-xs">
             <span className="material-symbols-outlined animate-spin mr-2 text-[#c5a47e]">progress_activity</span>
             Loading submission records...
           </div>
         ) : submissions.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-white/30 mb-3">
+          <div className="flex-1 flex flex-col items-center justify-center py-16 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-white/30 mb-1">
               <span className="material-symbols-outlined text-[24px]">inbox</span>
             </div>
-            <p className="text-sm text-white font-medium mb-1">No Form Submissions Yet</p>
+            <p className="text-sm text-white font-medium">No Submissions Recorded Yet</p>
             <p className="text-xs text-white/40 font-light max-w-sm">
-              When anyone completes and submits the 5-step onboarding flow, their submission will automatically populate here and append to your Google Sheet behind the scenes.
+              Complete and submit the 5-step onboarding portal (click <strong>&quot;Complete &amp; Submit Portal&quot;</strong> in Step 5), and your full submission record will appear here instantly.
             </p>
+            <button
+              type="button"
+              onClick={fetchSubmissions}
+              className="mt-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-[#c5a47e] rounded-xl font-medium flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">refresh</span>
+              Check / Refresh Records
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 flex-1 min-h-0 overflow-hidden">

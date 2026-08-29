@@ -111,6 +111,11 @@ export default function App() {
 
   const handleFinish = async () => {
     setIsSubmitting(true);
+    const subId = `R2R-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
+    const subDate = new Date().toISOString();
+
+    let subResult: SubmissionResult | undefined;
+
     try {
       // Dispatch payload to backend server
       const res = await fetch('/api/submit', {
@@ -119,49 +124,98 @@ export default function App() {
         body: JSON.stringify(formData),
       });
 
-      let subResult: SubmissionResult | undefined;
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
           subResult = {
-            submissionId: data.submissionId,
-            submittedAt: data.submittedAt,
-            recipientEmails: data.recipientEmails,
-            webhookSent: data.webhookSent,
+            submissionId: data.submissionId || subId,
+            submittedAt: data.submittedAt || subDate,
+            recipientEmails: data.recipientEmails || [formData.primaryContactEmail].filter(Boolean),
+            webhookSent: data.webhookSent || false,
             summaryText: data.summaryText,
           };
-          showToast('✓ Onboarding portal submitted successfully');
+          showToast('✓ Onboarding submission saved to records');
         }
       }
-
-      setFormData((prev) => ({
-        ...prev,
-        completedSteps: [1, 2, 3, 4, 5],
-        isSubmitted: true,
-        lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        submissionResult: subResult || {
-          submissionId: `R2R-REC-${Date.now().toString(36).toUpperCase()}`,
-          submittedAt: new Date().toISOString(),
-          webhookSent: false,
-          summaryText: 'Onboarding completed successfully.',
-        },
-      }));
-
-      setIsFinishModalOpen(true);
     } catch (err) {
-      console.warn('Submission network notice:', err);
-      // Fallback local completion
-      setFormData((prev) => ({
-        ...prev,
-        completedSteps: [1, 2, 3, 4, 5],
-        isSubmitted: true,
-        lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }));
-      setIsFinishModalOpen(true);
-      showToast('Responses recorded locally and ready for review');
-    } finally {
-      setIsSubmitting(false);
+      console.warn('Submission network note:', err);
     }
+
+    const finalSubId = subResult?.submissionId || subId;
+    const finalSubDate = subResult?.submittedAt || subDate;
+
+    const summaryText =
+      subResult?.summaryText ||
+      `=====================================================
+RING2REV ONBOARDING SUBMISSION RECORD
+Submission ID: ${finalSubId}
+Submitted At: ${finalSubDate}
+=====================================================
+
+1. BUSINESS INFORMATION
+- Company Name: ${formData.businessName || 'Not specified'}
+- Main Phone: ${formData.mainPhone || 'Not specified'}
+- Primary Contact: ${formData.primaryContactName || 'Not specified'}
+- Primary Email: ${formData.primaryContactEmail || 'Not specified'}
+- Primary Contact Phone: ${formData.primaryContactPhone || 'Not specified'}
+- Service Territory: ${formData.serviceArea || 'Not specified'}
+- Operating Hours: ${formData.businessHours || 'Not specified'}
+
+2. CONVERSATIONAL AI ENGINE
+- Vocal Tone & Cadence: ${formData.aiTone || 'Professional'}
+- Retell AI Email: ${formData.retellEmail || 'Not specified'}
+- Mandatory Phrases: ${formData.alwaysSay || 'None'}
+- Restricted Phrases: ${formData.neverSay || 'None'}
+- Knowledge Website: ${formData.websiteUrl || 'None'}
+- Knowledge Documents: ${(formData.uploadedDocs || []).length} uploaded
+- Configured Scenarios (${(formData.scenarios || []).length}):
+${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.description} -> ${s.responseProtocol}`).join('\n') || '  None'}
+- Escalation: ${formData.escalationName || 'None'} (${formData.escalationPhone || 'None'})
+
+3. INTEGRATION & WORKFLOWS
+- N8N Email: ${formData.n8nEmail || 'Not specified'}
+
+4. AUTONOMOUS RULES & SAFETY
+- Emergency Alerts: ${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}
+- SMS Follow-up: ${formData.smsFollowupEnabled ? 'Yes' : 'No'}
+- Auto Booking: ${formData.autoBookingEnabled ? 'Yes' : 'No'}
+- Directives: ${formData.customAutomationNotes || 'None'}`;
+
+    const submissionItem = {
+      id: finalSubId,
+      submittedAt: finalSubDate,
+      recipientEmails: subResult?.recipientEmails || [formData.primaryContactEmail].filter(Boolean) as string[],
+      data: { ...formData },
+      webhookSent: subResult?.webhookSent || false,
+      summaryText,
+    };
+
+    // Store in browser local storage archive for instant client redundancy
+    try {
+      const existingRaw = localStorage.getItem('ring2rev_submissions_history');
+      const existingList = existingRaw ? JSON.parse(existingRaw) : [];
+      const updatedList = [submissionItem, ...existingList.filter((item: any) => item.id !== finalSubId)];
+      localStorage.setItem('ring2rev_submissions_history', JSON.stringify(updatedList));
+    } catch (storageErr) {
+      console.warn('LocalStorage error:', storageErr);
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      completedSteps: [1, 2, 3, 4, 5],
+      isSubmitted: true,
+      lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      submissionResult: {
+        submissionId: finalSubId,
+        submittedAt: finalSubDate,
+        recipientEmails: submissionItem.recipientEmails,
+        webhookSent: submissionItem.webhookSent,
+        summaryText,
+      },
+    }));
+
+    setIsSubmitting(false);
+    setIsFinishModalOpen(true);
   };
 
   const handleReset = () => {

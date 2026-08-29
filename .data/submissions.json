@@ -1,0 +1,27 @@
+[
+  {
+    "id": "R2R-MTDZ61NU-788",
+    "submittedAt": "2026-08-29T06:03:46.794Z",
+    "recipientEmails": [
+      "shayanalizafar@yahoo.com",
+      "john@apexplumbing.com"
+    ],
+    "data": {
+      "businessName": "Apex Plumbing",
+      "primaryContactName": "John Doe",
+      "primaryContactEmail": "john@apexplumbing.com",
+      "mainPhone": "+1 (555) 234-5678",
+      "aiTone": "Warm & Consultative",
+      "businessHours": "Mon-Fri 8am-6pm",
+      "scenarios": [
+        {
+          "name": "Emergency Leak",
+          "description": "Customer has an active water leak",
+          "responseProtocol": "Mark urgent and transfer to on-call tech"
+        }
+      ]
+    },
+    "webhookSent": false,
+    "summaryText": "=====================================================\nRING2REV ONBOARDING SUBMISSION RECORD\nSubmission ID: R2R-MTDZ61NU-788\nSubmitted At: 2026-08-29T06:03:46.794Z\n=====================================================\n\n1. BUSINESS INFORMATION\n- Company Name: Apex Plumbing\n- Main Phone: +1 (555) 234-5678\n- Primary Contact: John Doe\n- Primary Email: john@apexplumbing.com\n- Primary Contact Phone: Not specified\n- Service Territory / Coverage: Not specified\n- Operating Hours: Mon-Fri 8am-6pm\n\n2. CONVERSATIONAL AI ENGINE\n- Vocal Tone & Cadence: Warm & Consultative\n- Retell AI Email: Not specified\n- Secure Call Payment Note: None\n- Mandatory Phrases (Always Say): None\n- Restricted Phrases (Never Say): None\n- Knowledge Website URL: None\n- Knowledge Documents (0):\n  None uploaded\n- Configured Scenarios (1):\n  1. [Emergency Leak]: Trigger: Customer has an active water leak | Protocol: Mark urgent and transfer to on-call tech\n- Escalation Contact: None (None)\n- Slack / Webhook URL: None\n\n3. INTEGRATION & WORKFLOWS\n- N8N Account Email: Not specified\n- Payment Gateway Live Sync: Pending live session\n- CRM / Calendar Live Sync: Pending live session\n\n4. AUTONOMOUS RULES & SAFETY\n- Emergency Alerts Enabled: No\n- SMS Post-Call Follow-ups: No\n- Auto Calendar Booking: No\n- Custom Automation Directives: None\n\n=====================================================\nDispatch Status: Recorded to portal server & ready for review.\n====================================================="
+  }
+]

@@ -22,31 +22,55 @@ interface SubmissionRecord {
 const DATA_DIR = path.join(process.cwd(), '.data');
 const SUBMISSIONS_FILE = path.join(DATA_DIR, 'submissions.json');
 
-function getSubmissions(): SubmissionRecord[] {
+let memorySubmissions: SubmissionRecord[] = [];
+
+function initStorage() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     if (fs.existsSync(SUBMISSIONS_FILE)) {
       const raw = fs.readFileSync(SUBMISSIONS_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memorySubmissions = parsed;
+        console.log(`[Storage] Loaded ${memorySubmissions.length} submissions from disk.`);
+      }
+    }
+  } catch (err) {
+    console.error('Storage initialization note:', err);
+  }
+}
+initStorage();
+
+function getSubmissions(): SubmissionRecord[] {
+  try {
+    if (fs.existsSync(SUBMISSIONS_FILE)) {
+      const raw = fs.readFileSync(SUBMISSIONS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length >= memorySubmissions.length) {
+        memorySubmissions = parsed;
+      }
     }
   } catch (err) {
     console.error('Error reading submissions file:', err);
   }
-  return [];
+  return memorySubmissions;
 }
 
 function saveSubmission(submission: SubmissionRecord) {
   try {
+    // 1. Update in-memory array immediately
+    memorySubmissions = [submission, ...memorySubmissions.filter((s) => s.id !== submission.id)];
+    
+    // 2. Persist to disk
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    const list = getSubmissions();
-    list.unshift(submission);
-    fs.writeFileSync(SUBMISSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    fs.writeFileSync(SUBMISSIONS_FILE, JSON.stringify(memorySubmissions, null, 2), 'utf-8');
+    console.log(`[Storage] Successfully saved submission ${submission.id}. Total count: ${memorySubmissions.length}`);
   } catch (err) {
-    console.error('Error saving submission:', err);
+    console.error('Error saving submission to disk:', err);
   }
 }
 
@@ -204,122 +228,151 @@ app.get('/api/submissions', (_req, res) => {
 // POST a new form submission
 app.post('/api/submit', async (req, res) => {
   try {
-    const formData = req.body;
+    const formData = req.body || {};
     const submissionId = `R2R-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
     const timestamp = new Date().toISOString();
 
-    // Internal admin lead recipient (stored securely on server, not exposed in client response)
+    // Internal admin lead recipient (stored securely on server)
     const adminEmail = 'shayanalizafar@yahoo.com';
     const recipientEmails: string[] = [adminEmail];
     
-    if (formData.primaryContactEmail && formData.primaryContactEmail.includes('@')) {
+    if (formData.primaryContactEmail && typeof formData.primaryContactEmail === 'string' && formData.primaryContactEmail.includes('@')) {
       recipientEmails.push(formData.primaryContactEmail.trim());
     }
-    if (formData.retellEmail && formData.retellEmail.includes('@') && !recipientEmails.includes(formData.retellEmail.trim())) {
+    if (formData.retellEmail && typeof formData.retellEmail === 'string' && formData.retellEmail.includes('@') && !recipientEmails.includes(formData.retellEmail.trim())) {
       recipientEmails.push(formData.retellEmail.trim());
     }
 
     const summaryText = formatSummaryText(formData, submissionId, timestamp);
-
-    let webhookSent = false;
-    // 1. If a Slack/webhook endpoint was provided, dispatch notification
-    if (formData.slackWebhook && formData.slackWebhook.startsWith('http')) {
-      try {
-        const payload = {
-          text: `🚀 *New Ring2Rev Onboarding Submission* - ${formData.businessName || 'Client'}\n*ID:* ${submissionId}\n*Contact:* ${formData.primaryContactName} (${formData.primaryContactEmail})\n*Tone:* ${formData.aiTone}\n*Scenarios:* ${(formData.scenarios || []).length} defined`,
-          attachments: [
-            {
-              color: '#c5a47e',
-              title: `${formData.businessName} Details`,
-              text: `Main Phone: ${formData.mainPhone}\nHours: ${formData.businessHours}\nEscalation: ${formData.escalationName} (${formData.escalationPhone})`,
-            }
-          ]
-        };
-
-        const response = await fetch(formData.slackWebhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        webhookSent = response.ok;
-      } catch (webhookErr) {
-        console.warn('Webhook dispatch warning:', webhookErr);
-      }
-    }
-
-    // 2. Behind-the-scenes Google Sheets Webhook push if GOOGLE_SHEETS_WEBHOOK_URL is configured
-    const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL || (formData.slackWebhook && formData.slackWebhook.startsWith('http') ? formData.slackWebhook : undefined);
-    
-    let sheetsWebhookStatus = 'Not configured';
-    if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
-      try {
-        const scenariosSummary = (formData.scenarios || [])
-          .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
-          .join(' | ');
-
-        const sheetPayload = {
-          submissionId,
-          timestamp,
-          businessName: formData.businessName || '',
-          primaryContactName: formData.primaryContactName || '',
-          primaryContactEmail: formData.primaryContactEmail || '',
-          mainPhone: formData.mainPhone || '',
-          businessAddress: formData.businessAddress || '',
-          serviceArea: formData.serviceArea || '',
-          businessHours: formData.businessHours || '',
-          aiTone: formData.aiTone || '',
-          retellEmail: formData.retellEmail || '',
-          n8nEmail: formData.n8nEmail || '',
-          escalationName: formData.escalationName || '',
-          escalationPhone: formData.escalationPhone || '',
-          notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
-          smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
-          autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
-          customNotes: formData.customAutomationNotes || '',
-          scenariosCount: (formData.scenarios || []).length,
-          scenariosSummary,
-          summaryText,
-        };
-
-        // Google Apps Script requires redirect following: 'follow'
-        const hookRes = await fetch(sheetsWebhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sheetPayload),
-          redirect: 'follow',
-        });
-        sheetsWebhookStatus = hookRes.ok ? `Success (${hookRes.status})` : `Failed (${hookRes.status})`;
-        console.log(`[Google Sheets Webhook] Push to ${sheetsWebhookUrl} resulted in: ${sheetsWebhookStatus}`);
-      } catch (sheetsErr: any) {
-        sheetsWebhookStatus = `Error: ${sheetsErr?.message || sheetsErr}`;
-        console.warn('[Google Sheets Webhook] Warning:', sheetsWebhookStatus);
-      }
-    }
 
     const record: SubmissionRecord = {
       id: submissionId,
       submittedAt: timestamp,
       recipientEmails,
       data: formData,
-      webhookSent,
+      webhookSent: false,
       summaryText,
     };
 
+    // CRITICAL: Save record to server memory and disk IMMEDIATELY
     saveSubmission(record);
+    console.log(`[Ring2Rev] Form submission ${submissionId} successfully recorded. Total entries: ${memorySubmissions.length}`);
 
-    console.log(`[Ring2Rev] Form submission ${submissionId} recorded.`);
+    // Asynchronous background webhooks dispatch (Slack & Google Sheets)
+    (async () => {
+      // 1. If Slack / custom webhook provided
+      if (formData.slackWebhook && typeof formData.slackWebhook === 'string' && formData.slackWebhook.startsWith('http')) {
+        try {
+          const payload = {
+            text: `🚀 *New Ring2Rev Onboarding Submission* - ${formData.businessName || 'Client'}\n*ID:* ${submissionId}\n*Contact:* ${formData.primaryContactName} (${formData.primaryContactEmail})\n*Tone:* ${formData.aiTone}\n*Scenarios:* ${(formData.scenarios || []).length} defined`,
+            attachments: [
+              {
+                color: '#c5a47e',
+                title: `${formData.businessName} Details`,
+                text: `Main Phone: ${formData.mainPhone}\nHours: ${formData.businessHours}\nEscalation: ${formData.escalationName} (${formData.escalationPhone})`,
+              }
+            ]
+          };
 
-    // Return clean, client-safe confirmation without revealing personal admin email addresses
-    res.json({
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const response = await fetch(formData.slackWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (response.ok) {
+            record.webhookSent = true;
+          }
+        } catch (webhookErr: any) {
+          console.warn('Slack/Webhook dispatch notice:', webhookErr?.message || webhookErr);
+        }
+      }
+
+      // 2. Google Sheets Webhook push if GOOGLE_SHEETS_WEBHOOK_URL is configured
+      const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL || (formData.slackWebhook && formData.slackWebhook.startsWith('http') ? formData.slackWebhook : undefined);
+      
+      if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
+        try {
+          const scenariosSummary = (formData.scenarios || [])
+            .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+            .join(' | ');
+
+          const sheetPayload = {
+            submissionId,
+            timestamp,
+            businessName: formData.businessName || '',
+            primaryContactName: formData.primaryContactName || '',
+            primaryContactEmail: formData.primaryContactEmail || '',
+            mainPhone: formData.mainPhone || '',
+            businessAddress: formData.businessAddress || '',
+            serviceArea: formData.serviceArea || '',
+            businessHours: formData.businessHours || '',
+            aiTone: formData.aiTone || '',
+            retellEmail: formData.retellEmail || '',
+            n8nEmail: formData.n8nEmail || '',
+            escalationName: formData.escalationName || '',
+            escalationPhone: formData.escalationPhone || '',
+            notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
+            smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
+            autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+            customNotes: formData.customAutomationNotes || '',
+            scenariosCount: (formData.scenarios || []).length,
+            scenariosSummary,
+            summaryText,
+          };
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const hookRes = await fetch(sheetsWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sheetPayload),
+            redirect: 'follow',
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          console.log(`[Google Sheets Webhook] Push to ${sheetsWebhookUrl} resulted in: ${hookRes.status}`);
+        } catch (sheetsErr: any) {
+          console.warn('[Google Sheets Webhook] Warning:', sheetsErr?.message || sheetsErr);
+        }
+      }
+    })().catch((bgErr) => console.warn('Background worker notice:', bgErr));
+
+    // Return instant success confirmation to client
+    return res.json({
       success: true,
       submissionId,
       submittedAt: timestamp,
       summaryText,
+      recipientEmails,
       message: 'Your onboarding specifications have been securely recorded and dispatched to our engineering pipeline.',
     });
   } catch (err: any) {
     console.error('Error submitting form:', err);
-    res.status(500).json({ success: false, error: err?.message || 'Server error processing submission' });
+    return res.status(500).json({ success: false, error: err?.message || 'Server error processing submission' });
+  }
+});
+
+// POST to sync client-side archive to server
+app.post('/api/submissions/sync-local', (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      let added = 0;
+      for (const item of items) {
+        if (item && item.id && !memorySubmissions.some((s) => s.id === item.id)) {
+          saveSubmission(item);
+          added++;
+        }
+      }
+      return res.json({ success: true, addedCount: added, totalCount: memorySubmissions.length });
+    }
+    return res.json({ success: true, totalCount: memorySubmissions.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
