@@ -248,7 +248,9 @@ app.post('/api/submit', async (req, res) => {
     }
 
     // 2. Behind-the-scenes Google Sheets Webhook push if GOOGLE_SHEETS_WEBHOOK_URL is configured
-    const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+    const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL || (formData.slackWebhook && formData.slackWebhook.startsWith('http') ? formData.slackWebhook : undefined);
+    
+    let sheetsWebhookStatus = 'Not configured';
     if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
       try {
         const scenariosSummary = (formData.scenarios || [])
@@ -273,18 +275,24 @@ app.post('/api/submit', async (req, res) => {
           notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
           smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
           autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+          customNotes: formData.customAutomationNotes || '',
           scenariosCount: (formData.scenarios || []).length,
           scenariosSummary,
           summaryText,
         };
 
-        fetch(sheetsWebhookUrl, {
+        // Google Apps Script requires redirect following: 'follow'
+        const hookRes = await fetch(sheetsWebhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(sheetPayload),
-        }).catch((err) => console.warn('Background Sheets Webhook push note:', err.message));
-      } catch (sheetsErr) {
-        console.warn('Google Sheets background push note:', sheetsErr);
+          redirect: 'follow',
+        });
+        sheetsWebhookStatus = hookRes.ok ? `Success (${hookRes.status})` : `Failed (${hookRes.status})`;
+        console.log(`[Google Sheets Webhook] Push to ${sheetsWebhookUrl} resulted in: ${sheetsWebhookStatus}`);
+      } catch (sheetsErr: any) {
+        sheetsWebhookStatus = `Error: ${sheetsErr?.message || sheetsErr}`;
+        console.warn('[Google Sheets Webhook] Warning:', sheetsWebhookStatus);
       }
     }
 
@@ -340,6 +348,77 @@ app.post('/api/submissions/:id/resend', (req, res) => {
     message: `Copy of submission ${id} dispatched to ${targetEmail || found.recipientEmails.join(', ')}`,
     submission: found,
   });
+});
+
+// POST to test or re-trigger webhook dispatch for any submission
+app.post('/api/submissions/:id/test-webhook', async (req, res) => {
+  const { id } = req.params;
+  const webhookUrl = req.body.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+  const list = getSubmissions();
+  const found = list.find((s) => s.id === id);
+
+  if (!found) {
+    return res.status(404).json({ success: false, error: 'Submission not found' });
+  }
+
+  if (!webhookUrl || !webhookUrl.startsWith('http')) {
+    return res.status(400).json({ success: false, error: 'No valid webhook URL provided or configured in GOOGLE_SHEETS_WEBHOOK_URL' });
+  }
+
+  try {
+    const formData = found.data || {};
+    const scenariosSummary = (formData.scenarios || [])
+      .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+      .join(' | ');
+
+    const sheetPayload = {
+      submissionId: found.id,
+      timestamp: found.submittedAt,
+      businessName: formData.businessName || '',
+      primaryContactName: formData.primaryContactName || '',
+      primaryContactEmail: formData.primaryContactEmail || '',
+      mainPhone: formData.mainPhone || '',
+      businessAddress: formData.businessAddress || '',
+      serviceArea: formData.serviceArea || '',
+      businessHours: formData.businessHours || '',
+      aiTone: formData.aiTone || '',
+      retellEmail: formData.retellEmail || '',
+      n8nEmail: formData.n8nEmail || '',
+      escalationName: formData.escalationName || '',
+      escalationPhone: formData.escalationPhone || '',
+      notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
+      smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
+      autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+      customNotes: formData.customAutomationNotes || '',
+      scenariosCount: (formData.scenarios || []).length,
+      scenariosSummary,
+      summaryText: found.summaryText,
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sheetPayload),
+      redirect: 'follow',
+    });
+
+    const responseText = await response.text();
+    res.json({
+      success: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      webhookUrl,
+      responseBody: responseText.slice(0, 500),
+      message: response.ok
+        ? `Successfully pushed payload to Google Sheets webhook (${response.status})`
+        : `Webhook returned status ${response.status}: ${responseText.slice(0, 200)}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: `Network error reaching webhook: ${err.message}`,
+    });
+  }
 });
 
 async function startServer() {

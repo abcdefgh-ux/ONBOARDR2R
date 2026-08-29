@@ -21,14 +21,43 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [resendEmail, setResendEmail] = useState('');
   const [resending, setResending] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [testWebhookUrl, setTestWebhookUrl] = useState('');
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedFormula, setCopiedFormula] = useState(false);
+  const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchSubmissions();
     }
   }, [isOpen]);
+
+  const handleTestWebhook = async () => {
+    if (!selectedSubmission) return;
+    setTestingWebhook(true);
+    setWebhookResult(null);
+    try {
+      const res = await fetch(`/api/submissions/${selectedSubmission.id}/test-webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl: testWebhookUrl.trim() || undefined }),
+      });
+      const data = await res.json();
+      setWebhookResult({
+        success: data.success,
+        message: data.message || data.error || (data.success ? 'Webhook pushed successfully' : 'Webhook test failed'),
+      });
+    } catch (err: any) {
+      setWebhookResult({
+        success: false,
+        message: `Network error: ${err.message}`,
+      });
+    } finally {
+      setTestingWebhook(false);
+    }
+  };
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -267,6 +296,106 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   </form>
                   {resendStatus && (
                     <p className="text-[11px] text-[#c5a47e] mt-1">{resendStatus}</p>
+                  )}
+                </div>
+
+                {/* Google Sheet / Webhook Push Tester */}
+                <div className="p-3.5 bg-[#080808] rounded-xl border border-[#0f9d58]/30 text-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-[0.15em] text-[#34A853] font-bold flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">sync</span>
+                      Live Google Sheets / Webhook Sync Tester
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAppsScriptHelper(!showAppsScriptHelper)}
+                      className="text-[10px] text-white/50 hover:text-white underline"
+                    >
+                      {showAppsScriptHelper ? 'Hide Script Code' : 'View Google Sheet Script'}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-white/50 font-light">
+                    Test or push this submission immediately to your Google Sheet Webhook / Apps Script endpoint.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={testWebhookUrl}
+                      onChange={(e) => setTestWebhookUrl(e.target.value)}
+                      placeholder="Enter Google Apps Script URL or Webhook (e.g. https://script.google.com/...)"
+                      className="flex-1 bg-black/70 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#34A853] focus:outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      disabled={testingWebhook}
+                      onClick={handleTestWebhook}
+                      className="px-4 py-1.5 bg-[#0f9d58]/30 hover:bg-[#0f9d58]/40 border border-[#0f9d58]/60 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      {testingWebhook ? (
+                        <>
+                          <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[14px]">send</span>
+                          Push to Sheet
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {webhookResult && (
+                    <div
+                      className={`p-2.5 rounded-lg text-xs border font-mono ${
+                        webhookResult.success
+                          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          : 'bg-red-500/10 text-red-300 border-red-500/30'
+                      }`}
+                    >
+                      {webhookResult.message}
+                    </div>
+                  )}
+
+                  {showAppsScriptHelper && (
+                    <div className="p-3 bg-black/80 rounded-lg border border-white/10 mt-2 space-y-2">
+                      <p className="text-[10px] text-[#c5a47e] font-bold uppercase tracking-wider">
+                        Google Sheets Apps Script (Copy &amp; Paste in Extensions &gt; Apps Script):
+                      </p>
+                      <pre className="text-[10px] text-white/70 font-mono overflow-x-auto bg-black p-2 rounded border border-white/5 whitespace-pre">
+{`function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = JSON.parse(e.postData.contents);
+    sheet.appendRow([
+      data.submissionId,
+      data.timestamp,
+      data.businessName,
+      data.primaryContactName,
+      data.primaryContactEmail,
+      data.mainPhone,
+      data.businessHours,
+      data.aiTone,
+      data.escalationName,
+      data.escalationPhone,
+      data.scenariosCount,
+      data.scenariosSummary,
+      data.summaryText
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}`}
+                      </pre>
+                      <p className="text-[10px] text-white/40">
+                        *Important: When deploying Apps Script, set "Who has access" to <strong>"Anyone"</strong> (so Google allows incoming background form webhooks).
+                      </p>
+                    </div>
                   )}
                 </div>
 
