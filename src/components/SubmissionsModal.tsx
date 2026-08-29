@@ -4,12 +4,11 @@ import {
   uploadOnboardingPdfToDrive,
   DriveUploadResult,
   getCachedDriveToken,
+  getStoredDriveUser,
   googleSignIn,
   logout,
-  initAuth,
-  auth,
+  DriveConnectedUser,
 } from '../services/googleDrive';
-import { User } from 'firebase/auth';
 import { fetchSubmissionsFromFirestore, saveSubmissionToFirestore } from '../services/firebaseDb';
 
 interface SubmissionItem {
@@ -50,23 +49,11 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [uploadingDriveId, setUploadingDriveId] = useState<string | null>(null);
   const [driveUploadResults, setDriveUploadResults] = useState<Record<string, DriveUploadResult>>({});
   const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
-  const [googleUser, setGoogleUser] = useState<User | null>(auth.currentUser);
+  const [googleUser, setGoogleUser] = useState<DriveConnectedUser | null>(() => getStoredDriveUser());
   const [isDriveConnecting, setIsDriveConnecting] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
 
   const MASTER_PASSWORD = 'Qwerty';
-
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (user) => {
-        setGoogleUser(user);
-      },
-      () => {
-        setGoogleUser(null);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
 
   const handleConnectGoogleDrive = async () => {
     setIsDriveConnecting(true);

@@ -43,17 +43,27 @@ export const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 provider.addScope(DRIVE_SCOPE);
 
+export interface DriveConnectedUser {
+  email?: string;
+  name?: string;
+  picture?: string;
+}
+
 let cachedAccessToken: string | null = null;
 let tokenExpiresAt: number = 0;
-let isSigningIn = false;
+let cachedDriveUser: DriveConnectedUser | null = null;
 
-// Check sessionStorage for persisted token across reloads
+// Check sessionStorage for persisted token & user across reloads
 try {
   const savedToken = sessionStorage.getItem('ring2rev_gdrive_token');
   const savedExp = sessionStorage.getItem('ring2rev_gdrive_token_exp');
+  const savedUser = sessionStorage.getItem('ring2rev_gdrive_user');
   if (savedToken && savedExp && Number(savedExp) > Date.now()) {
     cachedAccessToken = savedToken;
     tokenExpiresAt = Number(savedExp);
+  }
+  if (savedUser) {
+    cachedDriveUser = JSON.parse(savedUser);
   }
 } catch {
   // Ignore storage errors
@@ -66,12 +76,22 @@ export function getCachedDriveToken(): string | null {
   return null;
 }
 
-export function saveDriveToken(token: string, expiresInSeconds: number = 3500) {
+export function getStoredDriveUser(): DriveConnectedUser | null {
+  return cachedDriveUser;
+}
+
+export function saveDriveToken(token: string, expiresInSeconds: number = 3500, user?: DriveConnectedUser | null) {
   cachedAccessToken = token;
   tokenExpiresAt = Date.now() + expiresInSeconds * 1000;
+  if (user) {
+    cachedDriveUser = user;
+  }
   try {
     sessionStorage.setItem('ring2rev_gdrive_token', token);
     sessionStorage.setItem('ring2rev_gdrive_token_exp', String(tokenExpiresAt));
+    if (cachedDriveUser) {
+      sessionStorage.setItem('ring2rev_gdrive_user', JSON.stringify(cachedDriveUser));
+    }
   } catch {
     // Ignore storage errors
   }
@@ -80,67 +100,89 @@ export function saveDriveToken(token: string, expiresInSeconds: number = 3500) {
 export function clearDriveToken() {
   cachedAccessToken = null;
   tokenExpiresAt = 0;
+  cachedDriveUser = null;
   try {
     sessionStorage.removeItem('ring2rev_gdrive_token');
     sessionStorage.removeItem('ring2rev_gdrive_token_exp');
+    sessionStorage.removeItem('ring2rev_gdrive_user');
   } catch {
     // Ignore storage errors
   }
 }
 
 /**
- * Initialize Auth State Listener
+ * Fetch Google User Info using the Access Token
  */
-export const initAuth = (
-  onAuthSuccess?: (user: User, token: string | null) => void,
-  onAuthFailure?: () => void
-) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        if (onAuthSuccess) onAuthSuccess(user, null);
-      }
-    } else {
-      clearDriveToken();
-      if (onAuthFailure) onAuthFailure();
+export async function fetchGoogleUserInfo(token: string): Promise<DriveConnectedUser | null> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        email: data.email,
+        name: data.name,
+        picture: data.picture,
+      };
+    }
+  } catch (err) {
+    console.warn('Could not fetch Google user profile info:', err);
+  }
+  return null;
+}
+
+/**
+ * Perform Google Sign In using Google Identity Services (GSI) OAuth Client
+ */
+export const googleSignIn = async (): Promise<{ user: DriveConnectedUser; accessToken: string } | null> => {
+  const clientId = firebaseConfig.oAuthClientId || '';
+  if (!clientId) {
+    throw new Error('OAuth client configuration not found.');
+  }
+
+  // Ensure GSI script is ready
+  if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
+    throw new Error('Google Identity Services is loading. Please try again in a moment.');
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: `${DRIVE_SCOPE} email profile`,
+        callback: async (tokenResponse: any) => {
+          if (tokenResponse.error) {
+            reject(new Error(tokenResponse.error_description || tokenResponse.error));
+            return;
+          }
+          if (tokenResponse.access_token) {
+            const expiresIn = Number(tokenResponse.expires_in) || 3600;
+            const userProfile = await fetchGoogleUserInfo(tokenResponse.access_token);
+            const user: DriveConnectedUser = userProfile || { email: 'Connected' };
+            saveDriveToken(tokenResponse.access_token, expiresIn, user);
+            resolve({ user, accessToken: tokenResponse.access_token });
+          } else {
+            reject(new Error('No access token received from Google'));
+          }
+        },
+      });
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    } catch (err: any) {
+      reject(err);
     }
   });
 };
 
 /**
- * Perform Firebase Google Sign In with Drive scope
- */
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
-  try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to obtain Google Drive access token from Google sign in');
-    }
-
-    saveDriveToken(credential.accessToken, 3600);
-    return { user: result.user, accessToken: credential.accessToken };
-  } catch (error: any) {
-    console.error('Google sign in error:', error);
-    throw error;
-  } finally {
-    isSigningIn = false;
-  }
-};
-
-/**
- * Logout
+ * Logout / Unlink Google Drive
  */
 export const logout = async () => {
-  await signOut(auth);
   clearDriveToken();
 };
 
 /**
- * Acquire Google OAuth access token using Firebase Auth or fallback GSI
+ * Acquire Google OAuth access token
  */
 export async function requestDriveAccessToken(): Promise<string> {
   const currentToken = getCachedDriveToken();
@@ -148,46 +190,12 @@ export async function requestDriveAccessToken(): Promise<string> {
     return currentToken;
   }
 
-  // 1. Try Firebase Popup Sign-in first
-  try {
-    const res = await googleSignIn();
-    if (res?.accessToken) {
-      return res.accessToken;
-    }
-  } catch (firebaseErr: any) {
-    console.warn('Firebase popup attempt note:', firebaseErr);
+  const res = await googleSignIn();
+  if (res?.accessToken) {
+    return res.accessToken;
   }
 
-  // 2. Fallback to Google Identity Services if available
-  const clientId = firebaseConfig.oAuthClientId || '';
-  if (clientId && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
-    return new Promise((resolve, reject) => {
-      try {
-        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: DRIVE_SCOPE,
-          callback: (tokenResponse: any) => {
-            if (tokenResponse.error) {
-              reject(new Error(tokenResponse.error_description || tokenResponse.error));
-              return;
-            }
-            if (tokenResponse.access_token) {
-              const expiresIn = Number(tokenResponse.expires_in) || 3600;
-              saveDriveToken(tokenResponse.access_token, expiresIn);
-              resolve(tokenResponse.access_token);
-            } else {
-              reject(new Error('No access token received from Google'));
-            }
-          },
-        });
-        tokenClient.requestAccessToken({ prompt: '' });
-      } catch (err: any) {
-        reject(err);
-      }
-    });
-  }
-
-  throw new Error('Google Drive authorization required. Please sign in to connect Google Drive.');
+  throw new Error('Google Drive authorization required. Please link Google Drive.');
 }
 
 /**

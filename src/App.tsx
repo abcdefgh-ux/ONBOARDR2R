@@ -12,7 +12,7 @@ import { HelpModal } from './components/HelpModal';
 import { SaveExitModal } from './components/SaveExitModal';
 import { FinishSuccessModal } from './components/FinishSuccessModal';
 import { SubmissionsModal } from './components/SubmissionsModal';
-import { uploadOnboardingPdfToDrive, initAuth } from './services/googleDrive';
+import { uploadOnboardingPdfToDrive } from './services/googleDrive';
 import { saveSubmissionToFirestore } from './services/firebaseDb';
 
 const STORAGE_KEY = 'ring2rev_onboarding_state';
