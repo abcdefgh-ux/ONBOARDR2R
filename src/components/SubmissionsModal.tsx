@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { downloadOnboardingPDF } from '../utils/pdfGenerator';
+import { uploadOnboardingPdfToDrive, DriveUploadResult } from '../services/googleDrive';
 
 interface SubmissionItem {
   id: string;
@@ -36,6 +37,8 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [copied, setCopied] = useState(false);
   const [copiedCsv, setCopiedCsv] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
+  const [uploadingDriveId, setUploadingDriveId] = useState<string | null>(null);
+  const [driveUploadResults, setDriveUploadResults] = useState<Record<string, DriveUploadResult>>({});
   const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
 
   const MASTER_PASSWORD = 'Qwerty';
@@ -611,6 +614,51 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* Google Drive Upload Button */}
+                    {selectedSubmission && driveUploadResults[selectedSubmission.id]?.success ? (
+                      <a
+                        href={driveUploadResults[selectedSubmission.id].webViewLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1.5 border border-emerald-500/40 transition-all font-medium"
+                        title="View in Google Drive"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                        In Drive
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!selectedSubmission) return;
+                          setUploadingDriveId(selectedSubmission.id);
+                          try {
+                            const res = await uploadOnboardingPdfToDrive({
+                              formData: selectedSubmission.data || {},
+                              submissionId: selectedSubmission.id,
+                              submittedAt: selectedSubmission.submittedAt,
+                            });
+                            setDriveUploadResults((prev) => ({
+                              ...prev,
+                              [selectedSubmission.id]: res,
+                            }));
+                          } catch (err) {
+                            console.error('Drive upload error:', err);
+                          } finally {
+                            setUploadingDriveId(null);
+                          }
+                        }}
+                        disabled={uploadingDriveId === selectedSubmission?.id}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-200 text-xs flex items-center gap-1.5 border border-emerald-500/20 transition-all font-medium disabled:opacity-50"
+                        title="Save PDF directly to your Google Drive"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">
+                          {uploadingDriveId === selectedSubmission?.id ? 'progress_activity' : 'add_to_drive'}
+                        </span>
+                        {uploadingDriveId === selectedSubmission?.id ? 'Saving...' : 'Sync Drive'}
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {

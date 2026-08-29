@@ -269,6 +269,12 @@ app.post('/api/auth/verify-pin', (req, res) => {
   return res.status(401).json({ success: false, error: 'Invalid password. Please try again.' });
 });
 
+// OAuth Client Config endpoint
+app.get('/api/auth/client-id', (_req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.OAUTH_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
+  res.json({ clientId });
+});
+
 // Single or multi-file upload endpoint
 app.post('/api/upload', (req, res) => {
   try {
