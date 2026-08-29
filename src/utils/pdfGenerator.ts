@@ -306,3 +306,19 @@ export function downloadOnboardingPDF(options: PDFGenerationOptions) {
   const fileName = `Ring2Rev_Onboarding_Summary_${safeBusinessName}_${Date.now().toString(36).toUpperCase()}.pdf`;
   doc.save(fileName);
 }
+
+export function generateOnboardingPdfBlob(
+  formData: OnboardingState,
+  submissionId?: string,
+  submittedAt?: string
+): Promise<Blob> {
+  return new Promise((resolve) => {
+    const doc = generateOnboardingPDF({
+      formData,
+      submissionId,
+      submittedAt,
+    });
+    const blob = doc.output('blob');
+    resolve(blob);
+  });
+}

@@ -470,3 +470,91 @@ export async function uploadOnboardingPdfToDrive({
     };
   }
 }
+
+export { generateOnboardingPdfBlob } from '../utils/pdfGenerator';
+
+/**
+ * Universal Google Apps Script Webhook Integration
+ * Allows any client on any browser or device to auto-sync to your Google Drive
+ * without any Google OAuth login requirement.
+ */
+export const APPS_SCRIPT_STORAGE_KEY = 'ring2rev_apps_script_url';
+
+let inMemoryGlobalAppsScriptUrl = '';
+
+export function getStoredAppsScriptUrl(): string {
+  try {
+    const url = localStorage.getItem(APPS_SCRIPT_STORAGE_KEY);
+    if (url && url.trim()) return url.trim();
+  } catch {}
+  return (
+    inMemoryGlobalAppsScriptUrl ||
+    (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    ''
+  );
+}
+
+export function setInMemoryGlobalAppsScriptUrl(url: string) {
+  if (url && url.trim()) {
+    inMemoryGlobalAppsScriptUrl = url.trim();
+  }
+}
+
+export function setStoredAppsScriptUrl(url: string) {
+  try {
+    if (url && url.trim()) {
+      localStorage.setItem(APPS_SCRIPT_STORAGE_KEY, url.trim());
+      inMemoryGlobalAppsScriptUrl = url.trim();
+    } else {
+      localStorage.removeItem(APPS_SCRIPT_STORAGE_KEY);
+      inMemoryGlobalAppsScriptUrl = '';
+    }
+  } catch {}
+}
+
+export async function sendToGoogleAppsScriptWebhook(
+  appsScriptUrl: string,
+  submissionData: any,
+  pdfBase64?: string
+): Promise<{ success: boolean; message?: string; folderUrl?: string; folderId?: string }> {
+  const payload = {
+    ...submissionData,
+    pdfBase64: pdfBase64 || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  return sendToGoogleDriveAppsScript(appsScriptUrl, payload);
+}
+
+export async function sendToGoogleDriveAppsScript(
+  appsScriptUrl: string,
+  payload: any
+): Promise<{ success: boolean; message?: string; folderUrl?: string; folderId?: string }> {
+  try {
+    const response = await fetch(appsScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({ success: true }));
+    return {
+      success: true,
+      folderUrl: data.folderUrl || data.url,
+      folderId: data.folderId || data.id,
+      message: data.message,
+    };
+  } catch (error: any) {
+    try {
+      await fetch(appsScriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload),
+      });
+      return { success: true, message: 'Dispatched to Google Apps Script' };
+    } catch (fallbackErr: any) {
+      return { success: false, message: error.message || 'Apps script dispatch failed' };
+    }
+  }
+}

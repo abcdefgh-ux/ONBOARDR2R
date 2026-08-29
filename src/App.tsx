@@ -12,8 +12,16 @@ import { HelpModal } from './components/HelpModal';
 import { SaveExitModal } from './components/SaveExitModal';
 import { FinishSuccessModal } from './components/FinishSuccessModal';
 import { SubmissionsModal } from './components/SubmissionsModal';
-import { uploadOnboardingPdfToDrive } from './services/googleDrive';
-import { saveSubmissionToFirestore } from './services/firebaseDb';
+import {
+  getStoredAppsScriptUrl,
+  setInMemoryGlobalAppsScriptUrl,
+  sendToGoogleAppsScriptWebhook,
+  generateOnboardingPdfBlob,
+} from './services/googleDrive';
+import {
+  fetchGlobalDriveWebhookUrl,
+  saveSubmissionToFirestore,
+} from './services/firebaseDb';
 
 const STORAGE_KEY = 'ring2rev_onboarding_state';
 
@@ -37,6 +45,16 @@ export default function App() {
   const [isSubmissionsOpen, setIsSubmissionsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load global Google Drive configuration so ANY client on any device auto-syncs
+  useEffect(() => {
+    fetchGlobalDriveWebhookUrl().then((globalUrl) => {
+      if (globalUrl && globalUrl.trim()) {
+        setInMemoryGlobalAppsScriptUrl(globalUrl);
+        try { localStorage.setItem('ring2rev_apps_script_url', globalUrl); } catch {}
+      }
+    }).catch(() => {});
+  }, []);
 
   // Sync to local storage
   useEffect(() => {
@@ -269,14 +287,35 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
       },
     }));
 
-    // 3. Automatic silent background archive to connected Google Drive
-    uploadOnboardingPdfToDrive({
-      formData: { ...formData },
-      submissionId: finalSubId,
-      submittedAt: finalSubDate,
-    }).catch((driveErr) => {
-      console.warn('Background Drive archive note:', driveErr);
-    });
+    // 3. Automatic silent background archive to connected Google Drive Webhook (Zero popups / Zero OAuth for clients)
+    const appsScriptUrl = getStoredAppsScriptUrl();
+    if (appsScriptUrl && appsScriptUrl.trim().length > 0) {
+      try {
+        generateOnboardingPdfBlob(formData, finalSubId, finalSubDate)
+          .then((pdfBlob) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64Data = (reader.result as string)?.split(',')[1];
+              sendToGoogleAppsScriptWebhook(
+                appsScriptUrl,
+                {
+                  id: finalSubId,
+                  submittedAt: finalSubDate,
+                  formData,
+                  businessName: formData.businessName || 'Client',
+                  primaryContactName: formData.primaryContactName || '',
+                  primaryContactEmail: formData.primaryContactEmail || '',
+                },
+                base64Data
+              ).catch((e) => console.warn('Background Drive webhook sync note:', e));
+            };
+            reader.readAsDataURL(pdfBlob);
+          })
+          .catch((pdfErr) => console.warn('PDF generation note:', pdfErr));
+      } catch (scriptErr) {
+        console.warn('Apps script sync note:', scriptErr);
+      }
+    }
 
     setIsSubmitting(false);
     setIsFinishModalOpen(true);
@@ -303,6 +342,7 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
         completedSteps={formData.completedSteps}
         onSelectStep={handleSelectStep}
         onSaveAndExit={() => setIsSaveExitOpen(true)}
+        onOpenSubmissions={() => setIsSubmissionsOpen(true)}
       />
 
       {/* Mobile Drawer */}

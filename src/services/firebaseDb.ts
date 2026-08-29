@@ -67,6 +67,40 @@ export async function saveSubmissionToFirestore(submission: FirestoreSubmissionR
   }
 }
 
+const CONFIG_COLLECTION = 'system_config';
+const CONFIG_DOC_ID = 'global_settings';
+
+/**
+ * Fetch global config (e.g. Google Drive Apps Script URL) shared across all devices & clients
+ */
+export async function fetchGlobalDriveWebhookUrl(): Promise<string> {
+  try {
+    const docRef = doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID);
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      return data?.googleAppsScriptUrl || '';
+    }
+  } catch (err) {
+    console.warn('[Firestore] Could not load global drive config:', err);
+  }
+  return '';
+}
+
+/**
+ * Save global config (Google Drive Apps Script URL) so every client device sends to this Drive
+ */
+export async function saveGlobalDriveWebhookUrl(url: string): Promise<boolean> {
+  try {
+    const docRef = doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID);
+    await setDoc(docRef, { googleAppsScriptUrl: url, updatedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('[Firestore] Failed to save global drive config:', err);
+    return false;
+  }
+}
+
 /**
  * Fetch all submissions from global cloud Firestore
  */

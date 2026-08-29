@@ -6,12 +6,14 @@ interface SidebarProps {
   completedSteps: number[];
   onSelectStep: (step: number) => void;
   onSaveAndExit?: () => void;
+  onOpenSubmissions?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentStep,
   completedSteps,
   onSelectStep,
+  onOpenSubmissions,
 }) => {
   const progressPercent = Math.min(100, Math.max(20, currentStep * 20));
 
@@ -129,6 +131,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           Progress automatically saved
         </div>
+
+        {onOpenSubmissions && (
+          <button
+            type="button"
+            onClick={onOpenSubmissions}
+            className="w-full mt-2.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5 text-[10px] font-medium flex items-center justify-center gap-1.5 transition-all"
+          >
+            <span className="material-symbols-outlined text-[14px] text-[#c5a47e]">cloud_sync</span>
+            <span>Drive Sync &amp; Admin Archive</span>
+          </button>
+        )}
       </div>
     </aside>
   );
