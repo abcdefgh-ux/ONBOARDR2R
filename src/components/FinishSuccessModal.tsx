@@ -17,6 +17,7 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
   onOpenSubmissions,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedCsv, setCopiedCsv] = useState(false);
 
   if (!isOpen) return null;
 
@@ -36,6 +37,139 @@ Retell Email: ${formData.retellEmail || 'N/A'}
 N8N Email: ${formData.n8nEmail || 'N/A'}
 Escalation: ${formData.escalationName || 'N/A'} (${formData.escalationPhone || 'N/A'})
 Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, SMS Followup=${formData.smsFollowupEnabled ? 'Yes' : 'No'}, Auto Booking=${formData.autoBookingEnabled ? 'Yes' : 'No'}`;
+
+  const escapeCell = (val: any): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  const handleDownloadCsv = () => {
+    const headers = [
+      'Submission ID',
+      'Submitted At',
+      'Business Name',
+      'Primary Contact Name',
+      'Primary Contact Email',
+      'Main Phone',
+      'Business Address',
+      'Service Area / Territory',
+      'Business Hours',
+      'AI Tone',
+      'Retell Account Email',
+      'N8N Email',
+      'Escalation Contact Name',
+      'Escalation Phone',
+      'Emergency Alert Enabled',
+      'SMS Follow-up Enabled',
+      'Auto Booking Enabled',
+      'Custom Automation Notes',
+      'Configured Scenarios Count',
+      'Scenarios Summary',
+      'Uploaded Docs Count',
+      'Summary Transcript'
+    ];
+
+    const scenariosSummary = (formData.scenarios || [])
+      .map((s) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+      .join(' | ');
+
+    const row = [
+      escapeCell(subResult?.submissionId || 'R2R-REC'),
+      escapeCell(subResult?.submittedAt || new Date().toISOString()),
+      escapeCell(formData.businessName),
+      escapeCell(formData.primaryContactName),
+      escapeCell(formData.primaryContactEmail),
+      escapeCell(formData.mainPhone),
+      escapeCell(formData.businessAddress),
+      escapeCell(formData.serviceArea),
+      escapeCell(formData.businessHours),
+      escapeCell(formData.aiTone),
+      escapeCell(formData.retellEmail),
+      escapeCell(formData.n8nEmail),
+      escapeCell(formData.escalationName),
+      escapeCell(formData.escalationPhone),
+      escapeCell(formData.notifyTeamOnEmergency ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.smsFollowupEnabled ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.autoBookingEnabled ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.customAutomationNotes),
+      escapeCell((formData.scenarios || []).length),
+      escapeCell(scenariosSummary),
+      escapeCell((formData.uploadedDocs || []).length),
+      escapeCell(summaryText),
+    ].join(',');
+
+    const csvContent = `${headers.join(',')}\n${row}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ring2rev-onboarding-${(formData.businessName || 'submission').toLowerCase().replace(/[^a-z0-9]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyCsv = () => {
+    const headers = [
+      'Submission ID',
+      'Submitted At',
+      'Business Name',
+      'Primary Contact Name',
+      'Primary Contact Email',
+      'Main Phone',
+      'Business Address',
+      'Service Area / Territory',
+      'Business Hours',
+      'AI Tone',
+      'Retell Account Email',
+      'N8N Email',
+      'Escalation Contact Name',
+      'Escalation Phone',
+      'Emergency Alert Enabled',
+      'SMS Follow-up Enabled',
+      'Auto Booking Enabled',
+      'Custom Automation Notes',
+      'Configured Scenarios Count',
+      'Scenarios Summary',
+      'Uploaded Docs Count',
+      'Summary Transcript'
+    ];
+
+    const scenariosSummary = (formData.scenarios || [])
+      .map((s) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+      .join(' | ');
+
+    const row = [
+      escapeCell(subResult?.submissionId || 'R2R-REC'),
+      escapeCell(subResult?.submittedAt || new Date().toISOString()),
+      escapeCell(formData.businessName),
+      escapeCell(formData.primaryContactName),
+      escapeCell(formData.primaryContactEmail),
+      escapeCell(formData.mainPhone),
+      escapeCell(formData.businessAddress),
+      escapeCell(formData.serviceArea),
+      escapeCell(formData.businessHours),
+      escapeCell(formData.aiTone),
+      escapeCell(formData.retellEmail),
+      escapeCell(formData.n8nEmail),
+      escapeCell(formData.escalationName),
+      escapeCell(formData.escalationPhone),
+      escapeCell(formData.notifyTeamOnEmergency ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.smsFollowupEnabled ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.autoBookingEnabled ? 'TRUE' : 'FALSE'),
+      escapeCell(formData.customAutomationNotes),
+      escapeCell((formData.scenarios || []).length),
+      escapeCell(scenariosSummary),
+      escapeCell((formData.uploadedDocs || []).length),
+      escapeCell(summaryText),
+    ].join(',');
+
+    navigator.clipboard.writeText(`${headers.join(',')}\n${row}`);
+    setCopiedCsv(true);
+    setTimeout(() => setCopiedCsv(false), 2500);
+  };
 
   const handleCopyTranscript = () => {
     navigator.clipboard.writeText(summaryText);
@@ -132,17 +266,32 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
         )}
 
         {/* Quick Tools */}
-        <div className="grid grid-cols-3 gap-2.5 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
           <button
             type="button"
-            onClick={handleCopyTranscript}
+            onClick={handleDownloadCsv}
             className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-[#c5a47e]/40 transition-all flex flex-col items-center justify-center gap-1 group"
+            title="Download CSV spreadsheet"
           >
             <span className="material-symbols-outlined text-[18px] text-[#c5a47e] group-hover:scale-110 transition-transform">
-              {copied ? 'check' : 'content_copy'}
+              file_download
             </span>
             <span className="text-[10px] text-white/80 font-medium">
-              {copied ? 'Copied!' : 'Copy Summary'}
+              Save CSV
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopyCsv}
+            className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-[#c5a47e]/40 transition-all flex flex-col items-center justify-center gap-1 group"
+            title="Copy CSV to clipboard to paste in Sheets or Excel"
+          >
+            <span className="material-symbols-outlined text-[18px] text-[#c5a47e] group-hover:scale-110 transition-transform">
+              {copiedCsv ? 'check' : 'content_paste'}
+            </span>
+            <span className="text-[10px] text-white/80 font-medium">
+              {copiedCsv ? 'Copied!' : 'Copy CSV'}
             </span>
           </button>
 
@@ -152,7 +301,7 @@ Automations: Emergency Alert=${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}, S
             className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-[#c5a47e]/40 transition-all flex flex-col items-center justify-center gap-1 group"
           >
             <span className="material-symbols-outlined text-[18px] text-[#c5a47e] group-hover:scale-110 transition-transform">
-              download
+              description
             </span>
             <span className="text-[10px] text-white/80 font-medium">
               Save .TXT

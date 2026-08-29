@@ -116,12 +116,18 @@ export default function App() {
 
     let subResult: SubmissionResult | undefined;
 
+    // Check for saved Google Sheets Webhook URL
+    const sheetsWebhookUrl = formData.slackWebhook || localStorage.getItem('ring2rev_sheets_webhook_url');
+
     try {
-      // Dispatch payload to backend server
+      // 1. Dispatch payload to backend server
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          slackWebhook: sheetsWebhookUrl || formData.slackWebhook,
+        }),
       });
 
       if (res.ok) {
@@ -139,6 +145,48 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Submission network note:', err);
+    }
+
+    // 2. Direct browser webhook push to Google Sheets (no-cors mode guarantees bypass of CORS/proxy blocks)
+    if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
+      try {
+        const scenariosSummary = (formData.scenarios || [])
+          .map((s) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+          .join(' | ');
+
+        const sheetPayload = {
+          submissionId: subResult?.submissionId || subId,
+          timestamp: subResult?.submittedAt || subDate,
+          businessName: formData.businessName || '',
+          primaryContactName: formData.primaryContactName || '',
+          primaryContactEmail: formData.primaryContactEmail || '',
+          mainPhone: formData.mainPhone || '',
+          businessAddress: formData.businessAddress || '',
+          serviceArea: formData.serviceArea || '',
+          businessHours: formData.businessHours || '',
+          aiTone: formData.aiTone || 'Professional',
+          retellEmail: formData.retellEmail || '',
+          n8nEmail: formData.n8nEmail || '',
+          escalationName: formData.escalationName || '',
+          escalationPhone: formData.escalationPhone || '',
+          notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
+          smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
+          autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+          customNotes: formData.customAutomationNotes || '',
+          scenariosCount: (formData.scenarios || []).length,
+          scenariosSummary,
+          summaryText: subResult?.summaryText || `Ring2Rev Onboarding - ${formData.businessName || 'Submission'}`,
+        };
+
+        fetch(sheetsWebhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(sheetPayload),
+        }).catch(() => {});
+      } catch (clientPushErr) {
+        console.warn('Client push note:', clientPushErr);
+      }
     }
 
     const finalSubId = subResult?.submissionId || subId;

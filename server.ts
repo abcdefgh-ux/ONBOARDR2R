@@ -406,27 +406,41 @@ app.post('/api/submissions/:id/resend', (req, res) => {
 // POST to test or re-trigger webhook dispatch for any submission
 app.post('/api/submissions/:id/test-webhook', async (req, res) => {
   const { id } = req.params;
-  const webhookUrl = req.body.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+  let webhookUrl = (req.body.webhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || '').trim();
+  const inlineSubmission = req.body.submission;
+  
   const list = getSubmissions();
-  const found = list.find((s) => s.id === id);
+  let found = list.find((s) => s.id === id) || inlineSubmission;
 
   if (!found) {
-    return res.status(404).json({ success: false, error: 'Submission not found' });
+    found = list[0];
+  }
+
+  if (!found) {
+    return res.status(404).json({ success: false, error: 'No submission found to test with. Please submit the onboarding form first.' });
   }
 
   if (!webhookUrl || !webhookUrl.startsWith('http')) {
-    return res.status(400).json({ success: false, error: 'No valid webhook URL provided or configured in GOOGLE_SHEETS_WEBHOOK_URL' });
+    return res.status(400).json({ success: false, error: 'Please enter a valid webhook URL starting with https://' });
+  }
+
+  // Automatic normalization for Google Apps Script URLs:
+  if (webhookUrl.includes('script.google.com/macros/s/')) {
+    webhookUrl = webhookUrl.replace(/\/edit.*$/, '').replace(/\/dev.*$/, '');
+    if (!webhookUrl.endsWith('/exec')) {
+      webhookUrl = webhookUrl.replace(/\/+$/, '') + '/exec';
+    }
   }
 
   try {
-    const formData = found.data || {};
+    const formData = found.data || found;
     const scenariosSummary = (formData.scenarios || [])
       .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
       .join(' | ');
 
     const sheetPayload = {
-      submissionId: found.id,
-      timestamp: found.submittedAt,
+      submissionId: found.id || id,
+      timestamp: found.submittedAt || new Date().toISOString(),
       businessName: formData.businessName || '',
       primaryContactName: formData.primaryContactName || '',
       primaryContactEmail: formData.primaryContactEmail || '',
@@ -445,17 +459,43 @@ app.post('/api/submissions/:id/test-webhook', async (req, res) => {
       customNotes: formData.customAutomationNotes || '',
       scenariosCount: (formData.scenarios || []).length,
       scenariosSummary,
-      summaryText: found.summaryText,
+      summaryText: found.summaryText || '',
     };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sheetPayload),
       redirect: 'follow',
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const responseText = await response.text();
+    
+    // Check if Google returned "Sorry, the file you have requested does not exist" or HTML 404
+    if (responseText.includes('does not exist') || responseText.includes('Page not found') || responseText.includes('drive-logo')) {
+      return res.json({
+        success: false,
+        status: 404,
+        webhookUrl,
+        message: 'Google Apps Script says "The file you requested does not exist". This means the deployment ID was deleted or copied from the browser address bar rather than "Deploy > New deployment > Web app". Follow the 3-step guide below to generate a live Web App URL.',
+      });
+    }
+
+    let isHtml = responseText.trim().startsWith('<') || responseText.includes('<!DOCTYPE');
+    if (isHtml) {
+      return res.json({
+        success: false,
+        status: response.status,
+        webhookUrl,
+        message: `Google returned an authorization HTML page instead of JSON. In your Apps Script deployment settings, make sure "Who has access" is set to "Anyone" and deploy a "New deployment".`,
+      });
+    }
+
     res.json({
       success: response.ok,
       status: response.status,
@@ -463,7 +503,7 @@ app.post('/api/submissions/:id/test-webhook', async (req, res) => {
       webhookUrl,
       responseBody: responseText.slice(0, 500),
       message: response.ok
-        ? `Successfully pushed payload to Google Sheets webhook (${response.status})`
+        ? `✓ Successfully delivered submission ${found.id || id} to Google Sheet (${response.status})`
         : `Webhook returned status ${response.status}: ${responseText.slice(0, 200)}`,
     });
   } catch (err: any) {

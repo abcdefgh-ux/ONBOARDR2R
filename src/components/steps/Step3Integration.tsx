@@ -79,6 +79,43 @@ export const Step3Integration: React.FC<Step3Props> = ({
 
           <hr className="border-white/5" />
 
+          {/* Google Sheets Automated Live Push */}
+          <div>
+            <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">
+              <span className="material-symbols-outlined text-[#34A853] text-[22px]">
+                table_chart
+              </span>
+              Google Sheets Live Data Bridge (Optional)
+            </h3>
+            <p className="text-xs text-white/50 mb-4 font-light leading-relaxed">
+              Automatically append every onboarding response directly to your Google Spreadsheet in real time via Apps Script Web App.
+            </p>
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="sheets-webhook"
+                className="text-[10px] font-medium uppercase tracking-[0.2em] text-[#c5a47e]"
+              >
+                Google Apps Script Web App URL
+              </label>
+              <input
+                id="sheets-webhook"
+                type="url"
+                value={formData.slackWebhook || ''}
+                onChange={(e) => {
+                  onChange('slackWebhook', e.target.value);
+                  localStorage.setItem('ring2rev_sheets_webhook_url', e.target.value);
+                }}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full rounded-xl glass-input p-3.5 text-white text-sm font-mono"
+              />
+              <span className="text-[11px] text-white/40 font-light">
+                Deploy your script with <strong className="text-white/60">Who has access: Anyone</strong>. Data will automatically push when you submit the portal.
+              </span>
+            </div>
+          </div>
+
+          <hr className="border-white/5" />
+
           {/* Scheduling & CRM Setup */}
           <div>
             <h3 className="text-base font-light text-white flex items-center gap-3 mb-2 tracking-wide">

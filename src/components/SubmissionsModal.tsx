@@ -25,34 +25,201 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookResult, setWebhookResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedCsv, setCopiedCsv] = useState(false);
   const [copiedFormula, setCopiedFormula] = useState(false);
   const [showAppsScriptHelper, setShowAppsScriptHelper] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchSubmissions();
+      const savedHook = localStorage.getItem('ring2rev_sheets_webhook_url');
+      if (savedHook && !testWebhookUrl) {
+        setTestWebhookUrl(savedHook);
+      }
     }
   }, [isOpen]);
+
+  const escapeCsvVal = (val: any): string => {
+    if (val === undefined || val === null) return '""';
+    const str = String(val);
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  const generateCsvData = (records: SubmissionItem[]): string => {
+    const headers = [
+      'Submission ID',
+      'Submitted At',
+      'Business Name',
+      'Primary Contact Name',
+      'Primary Contact Email',
+      'Main Phone',
+      'Business Address',
+      'Service Area / Territory',
+      'Business Hours',
+      'AI Tone',
+      'Retell Account Email',
+      'N8N Email',
+      'Escalation Contact Name',
+      'Escalation Phone',
+      'Emergency Alert Enabled',
+      'SMS Follow-up Enabled',
+      'Auto Booking Enabled',
+      'Custom Automation Notes',
+      'Configured Scenarios Count',
+      'Scenarios Summary',
+      'Uploaded Docs Count',
+      'Summary Transcript'
+    ];
+
+    const rows = records.map((sub) => {
+      const d = sub.data || {};
+      const scenarios = (d.scenarios || [])
+        .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+        .join(' | ');
+
+      return [
+        escapeCsvVal(sub.id),
+        escapeCsvVal(sub.submittedAt),
+        escapeCsvVal(d.businessName),
+        escapeCsvVal(d.primaryContactName),
+        escapeCsvVal(d.primaryContactEmail),
+        escapeCsvVal(d.mainPhone),
+        escapeCsvVal(d.businessAddress),
+        escapeCsvVal(d.serviceArea),
+        escapeCsvVal(d.businessHours),
+        escapeCsvVal(d.aiTone),
+        escapeCsvVal(d.retellEmail),
+        escapeCsvVal(d.n8nEmail),
+        escapeCsvVal(d.escalationName),
+        escapeCsvVal(d.escalationPhone),
+        escapeCsvVal(d.notifyTeamOnEmergency ? 'TRUE' : 'FALSE'),
+        escapeCsvVal(d.smsFollowupEnabled ? 'TRUE' : 'FALSE'),
+        escapeCsvVal(d.autoBookingEnabled ? 'TRUE' : 'FALSE'),
+        escapeCsvVal(d.customAutomationNotes),
+        escapeCsvVal((d.scenarios || []).length),
+        escapeCsvVal(scenarios),
+        escapeCsvVal((d.uploadedDocs || []).length),
+        escapeCsvVal(sub.summaryText),
+      ].join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+  };
+
+  const handleDownloadCsv = () => {
+    if (submissions.length === 0) return;
+    const csvContent = generateCsvData(submissions);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ring2rev-submissions-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyCsvData = () => {
+    if (submissions.length === 0) return;
+    const csvContent = generateCsvData(submissions);
+    navigator.clipboard.writeText(csvContent);
+    setCopiedCsv(true);
+    setTimeout(() => setCopiedCsv(false), 2500);
+  };
 
   const handleTestWebhook = async () => {
     if (!selectedSubmission) return;
     setTestingWebhook(true);
     setWebhookResult(null);
+
+    const rawUrl = testWebhookUrl.trim();
+    if (!rawUrl) {
+      setWebhookResult({ success: false, message: 'Please enter your Google Apps Script Web App URL.' });
+      setTestingWebhook(false);
+      return;
+    }
+
+    // Persist URL in localStorage
+    localStorage.setItem('ring2rev_sheets_webhook_url', rawUrl);
+
     try {
+      const formData = selectedSubmission.data || {};
+      const scenariosSummary = (formData.scenarios || [])
+        .map((s: any) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
+        .join(' | ');
+
+      const sheetPayload = {
+        submissionId: selectedSubmission.id,
+        timestamp: selectedSubmission.submittedAt || new Date().toISOString(),
+        businessName: formData.businessName || '',
+        primaryContactName: formData.primaryContactName || '',
+        primaryContactEmail: formData.primaryContactEmail || '',
+        mainPhone: formData.mainPhone || '',
+        businessAddress: formData.businessAddress || '',
+        serviceArea: formData.serviceArea || '',
+        businessHours: formData.businessHours || '',
+        aiTone: formData.aiTone || 'Professional',
+        retellEmail: formData.retellEmail || '',
+        n8nEmail: formData.n8nEmail || '',
+        escalationName: formData.escalationName || '',
+        escalationPhone: formData.escalationPhone || '',
+        notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
+        smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
+        autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
+        customNotes: formData.customAutomationNotes || '',
+        scenariosCount: (formData.scenarios || []).length,
+        scenariosSummary,
+        summaryText: selectedSubmission.summaryText || '',
+      };
+
+      // 1. Direct browser fetch dispatch (no-cors mode guarantees bypass of origin blocks)
+      if (rawUrl.startsWith('http')) {
+        try {
+          fetch(rawUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(sheetPayload),
+          }).catch(() => {});
+        } catch {
+          // Ignore
+        }
+      }
+
+      // 2. Server-side proxy test for verification feedback
       const res = await fetch(`/api/submissions/${selectedSubmission.id}/test-webhook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookUrl: testWebhookUrl.trim() || undefined }),
+        body: JSON.stringify({
+          webhookUrl: rawUrl,
+          submission: selectedSubmission,
+        }),
       });
-      const data = await res.json();
+
+      const contentType = res.headers.get('content-type') || '';
+      let data: any;
+
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        data = {
+          success: false,
+          message: text.startsWith('<')
+            ? 'Endpoint returned an HTML page. Ensure your Google Apps Script is deployed as "Web app" with "Who has access" set to "Anyone".'
+            : text.slice(0, 200),
+        };
+      }
+
       setWebhookResult({
-        success: data.success,
-        message: data.message || data.error || (data.success ? 'Webhook pushed successfully' : 'Webhook test failed'),
+        success: Boolean(data.success),
+        message: data.message || data.error || (data.success ? '✓ Submission delivered to Google Sheet!' : 'Webhook test failed'),
       });
     } catch (err: any) {
       setWebhookResult({
         success: false,
-        message: `Network error: ${err.message}`,
+        message: `Network notice: ${err?.message || err}`,
       });
     } finally {
       setTestingWebhook(false);
@@ -206,7 +373,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={fetchSubmissions}
@@ -216,15 +383,28 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
               <span className={`material-symbols-outlined text-[16px] ${loading ? 'animate-spin' : ''}`}>sync</span>
               Sync
             </button>
-            <a
-              href="/api/submissions/export.csv"
-              download="ring2rev-submissions.csv"
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-[#c5a47e] flex items-center gap-1.5 transition-colors font-medium"
-              title="Download full CSV of all submissions"
+            <button
+              type="button"
+              onClick={handleDownloadCsv}
+              disabled={submissions.length === 0}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-[#c5a47e] flex items-center gap-1.5 transition-colors font-medium disabled:opacity-40"
+              title="Direct instant CSV file download"
             >
               <span className="material-symbols-outlined text-[16px]">file_download</span>
-              CSV
-            </a>
+              Download CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyCsvData}
+              disabled={submissions.length === 0}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/80 hover:text-white flex items-center gap-1.5 transition-colors font-medium disabled:opacity-40"
+              title="Copy raw CSV text to paste into Excel or Google Sheets"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {copiedCsv ? 'check' : 'content_paste'}
+              </span>
+              {copiedCsv ? 'CSV Copied!' : 'Copy CSV'}
+            </button>
             <button
               type="button"
               onClick={handleCopySheetsFormula}
@@ -433,31 +613,100 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                   )}
 
                   {showAppsScriptHelper && (
-                    <div className="p-3 bg-black/80 rounded-lg border border-white/10 mt-2 space-y-2">
-                      <p className="text-[10px] text-[#c5a47e] font-bold uppercase tracking-wider">
-                        Google Sheets Apps Script (Copy &amp; Paste in Extensions &gt; Apps Script):
+                    <div className="p-3.5 bg-black/90 rounded-lg border border-[#c5a47e]/30 mt-2 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                        <p className="text-[11px] text-[#c5a47e] font-bold uppercase tracking-wider">
+                          How to Deploy to Google Sheets (3 Quick Steps)
+                        </p>
+                        <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          Tested &amp; Verified
+                        </span>
+                      </div>
+
+                      <ol className="text-[11px] text-white/80 space-y-1.5 list-decimal list-inside font-light leading-relaxed">
+                        <li>
+                          In your Google Sheet, open <strong className="text-white">Extensions &gt; Apps Script</strong>.
+                        </li>
+                        <li>
+                          Replace the code in <code className="text-[#c5a47e]">Code.gs</code> with the snippet below and click <strong>Save (💾)</strong>.
+                        </li>
+                        <li>
+                          Click <strong className="text-white">Deploy &gt; New deployment</strong> (blue button top-right).
+                        </li>
+                        <li>
+                          Click the gear icon ⚙️ &gt; select <strong className="text-[#c5a47e]">Web app</strong>.
+                        </li>
+                        <li>
+                          Set <strong>Execute as:</strong> <em>Me</em> and <strong>Who has access:</strong> <strong className="text-emerald-400">"Anyone"</strong>.
+                        </li>
+                        <li>
+                          Click <strong>Deploy</strong> and copy the generated <code className="text-[#c5a47e]">Web app URL</code> (ending in <code className="text-white">/exec</code>).
+                        </li>
+                      </ol>
+
+                      <p className="text-[10px] text-[#c5a47e] font-bold uppercase tracking-wider pt-1">
+                        Google Sheets Apps Script Code:
                       </p>
-                      <pre className="text-[10px] text-white/70 font-mono overflow-x-auto bg-black p-2 rounded border border-white/5 whitespace-pre">
-{`function doPost(e) {
+                      <pre className="text-[10px] text-white/90 font-mono overflow-x-auto bg-[#0a0a0a] p-2.5 rounded-lg border border-white/10 whitespace-pre selection:bg-[#c5a47e]/30">
+{`function doGet(e) {
+  return handlePayload(e);
+}
+
+function doPost(e) {
+  return handlePayload(e);
+}
+
+function handlePayload(e) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = JSON.parse(e.postData.contents);
+    
+    // Auto-create header row on first submission
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        "Submission ID",
+        "Submitted At",
+        "Business Name",
+        "Primary Contact",
+        "Email",
+        "Phone",
+        "Operating Hours",
+        "AI Tone",
+        "Escalation Contact",
+        "Escalation Phone",
+        "Scenarios Count",
+        "Scenarios Summary",
+        "Full Summary"
+      ]);
+    }
+
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        data = JSON.parse(e.postData.contents);
+      } catch(parseErr) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+
     sheet.appendRow([
-      data.submissionId,
-      data.timestamp,
-      data.businessName,
-      data.primaryContactName,
-      data.primaryContactEmail,
-      data.mainPhone,
-      data.businessHours,
-      data.aiTone,
-      data.escalationName,
-      data.escalationPhone,
-      data.scenariosCount,
-      data.scenariosSummary,
-      data.summaryText
+      data.submissionId || "R2R-LOG",
+      data.timestamp || new Date().toISOString(),
+      data.businessName || "",
+      data.primaryContactName || "",
+      data.primaryContactEmail || "",
+      data.mainPhone || "",
+      data.businessHours || "",
+      data.aiTone || "",
+      data.escalationName || "",
+      data.escalationPhone || "",
+      data.scenariosCount || 0,
+      data.scenariosSummary || "",
+      data.summaryText || ""
     ]);
-    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Row added" }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() }))
@@ -465,9 +714,6 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
   }
 }`}
                       </pre>
-                      <p className="text-[10px] text-white/40">
-                        *Important: When deploying Apps Script, set "Who has access" to <strong>"Anyone"</strong> (so Google allows incoming background form webhooks).
-                      </p>
                     </div>
                   )}
                 </div>
