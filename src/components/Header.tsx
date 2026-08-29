@@ -4,16 +4,12 @@ import { STEP_CONFIG } from '../data/initialData';
 interface HeaderProps {
   currentStep: number;
   onOpenMobileMenu: () => void;
-  onOpenSubmissions?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentStep,
   onOpenMobileMenu,
-  onOpenSubmissions,
 }) => {
-  const currentConfig = STEP_CONFIG.find((s) => s.step === currentStep) || STEP_CONFIG[0];
-
   return (
     <>
       {/* Mobile Top Bar */}
@@ -41,19 +37,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {onOpenSubmissions && (
-            <button
-              id="mobile-submissions-btn"
-              onClick={onOpenSubmissions}
-              className="p-2 text-white/50 hover:text-[#c5a47e]"
-              title="Response Copies (Admin Protected)"
-            >
-              <span className="material-symbols-outlined text-[20px]">lock</span>
-            </button>
-          )}
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/[0.03] border border-white/5 text-[9px] text-white/40 font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            Auto-saved
+            Auto-saving
           </div>
         </div>
       </header>
@@ -78,18 +64,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             Progress automatically saved
           </div>
-
-          {onOpenSubmissions && (
-            <button
-              id="header-submissions-btn"
-              onClick={onOpenSubmissions}
-              className="text-[11px] uppercase tracking-[0.15em] font-medium text-[#c5a47e] hover:text-white transition-colors px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 flex items-center gap-1.5"
-              title="View all received response copies (Admin Protected)"
-            >
-              <span className="material-symbols-outlined text-[16px]">lock</span>
-              Response Copies
-            </button>
-          )}
         </div>
       </header>
     </>

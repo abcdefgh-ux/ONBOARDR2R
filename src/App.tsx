@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { OnboardingState, SubmissionResult } from './types';
+import { OnboardingState } from './types';
 import { INITIAL_STATE } from './data/initialData';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -11,17 +11,12 @@ import { Step5Expectations } from './components/steps/Step5Expectations';
 import { HelpModal } from './components/HelpModal';
 import { SaveExitModal } from './components/SaveExitModal';
 import { FinishSuccessModal } from './components/FinishSuccessModal';
-import { SubmissionsModal } from './components/SubmissionsModal';
 import {
-  getStoredAppsScriptUrl,
-  setInMemoryGlobalAppsScriptUrl,
+  DEFAULT_APPS_SCRIPT_URL,
   sendToGoogleAppsScriptWebhook,
   generateOnboardingPdfBlob,
 } from './services/googleDrive';
-import {
-  fetchGlobalDriveWebhookUrl,
-  saveSubmissionToFirestore,
-} from './services/firebaseDb';
+import { clearPortalStorage } from './services/firebaseDb';
 
 const STORAGE_KEY = 'ring2rev_onboarding_state';
 
@@ -42,21 +37,15 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isSaveExitOpen, setIsSaveExitOpen] = useState(false);
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
-  const [isSubmissionsOpen, setIsSubmissionsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load global Google Drive configuration so ANY client on any device auto-syncs
+  // Clean old submission archives and keep portal light & secure
   useEffect(() => {
-    fetchGlobalDriveWebhookUrl().then((globalUrl) => {
-      if (globalUrl && globalUrl.trim()) {
-        setInMemoryGlobalAppsScriptUrl(globalUrl);
-        try { localStorage.setItem('ring2rev_apps_script_url', globalUrl); } catch {}
-      }
-    }).catch(() => {});
+    clearPortalStorage();
   }, []);
 
-  // Sync to local storage
+  // Sync draft to local storage while in-progress
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
@@ -120,212 +109,61 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSaveProgress = () => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setFormData((prev) => ({
-      ...prev,
-      lastSavedAt: timeStr,
-    }));
-    showToast('Progress cached locally');
-  };
-
   const handleFinish = async () => {
     setIsSubmitting(true);
-    const subId = `R2R-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}`;
-    const subDate = new Date().toISOString();
 
-    let subResult: SubmissionResult | undefined;
+    const finalSubId = `R2R-${Date.now().toString().slice(-6)}`;
+    const finalSubDate = new Date().toLocaleString();
 
-    // Check for saved Google Sheets Webhook URL
-    const sheetsWebhookUrl = formData.slackWebhook || localStorage.getItem('ring2rev_sheets_webhook_url');
+    // Prepare uploaded files payload with pure base64 for Drive
+    const uploadedDocsPayload = (formData.uploadedDocs || []).map((doc) => ({
+      name: doc.name,
+      type: doc.type,
+      size: doc.size,
+      base64: doc.dataUrl || doc.url || '',
+    }));
 
+    // 1. Direct background upload to Google Drive Webhook
     try {
-      // 1. Dispatch payload to backend server
-      const res = await fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          slackWebhook: sheetsWebhookUrl || formData.slackWebhook,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          subResult = {
-            submissionId: data.submissionId || subId,
-            submittedAt: data.submittedAt || subDate,
-            recipientEmails: data.recipientEmails || [formData.primaryContactEmail].filter(Boolean),
-            webhookSent: data.webhookSent || false,
-            summaryText: data.summaryText,
-          };
-          showToast('✓ Onboarding submission saved to records');
-        }
-      }
-    } catch (err) {
-      console.warn('Submission network note:', err);
+      const pdfBlob = await generateOnboardingPdfBlob(formData, finalSubId, finalSubDate);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64Data = (reader.result as string)?.split(',')[1];
+        sendToGoogleAppsScriptWebhook(
+          DEFAULT_APPS_SCRIPT_URL,
+          {
+            id: finalSubId,
+            submittedAt: finalSubDate,
+            formData,
+            uploadedDocs: uploadedDocsPayload,
+            kbArticles: formData.kbArticles || [],
+            businessName: formData.businessName || 'Client',
+            primaryContactName: formData.primaryContactName || '',
+            primaryContactEmail: formData.primaryContactEmail || '',
+          },
+          base64Data
+        ).catch((e) => console.warn('Drive sync note:', e));
+      };
+      reader.readAsDataURL(pdfBlob);
+    } catch (scriptErr) {
+      console.warn('Drive webhook sync note:', scriptErr);
     }
 
-    // 2. Direct browser webhook push to Google Sheets (no-cors mode guarantees bypass of CORS/proxy blocks)
-    if (sheetsWebhookUrl && sheetsWebhookUrl.startsWith('http')) {
-      try {
-        const scenariosSummary = (formData.scenarios || [])
-          .map((s) => `[${s.name}]: ${s.description || ''} -> ${s.responseProtocol || ''}`)
-          .join(' | ');
-
-        const sheetPayload = {
-          submissionId: subResult?.submissionId || subId,
-          timestamp: subResult?.submittedAt || subDate,
-          businessName: formData.businessName || '',
-          primaryContactName: formData.primaryContactName || '',
-          primaryContactEmail: formData.primaryContactEmail || '',
-          mainPhone: formData.mainPhone || '',
-          businessAddress: formData.businessAddress || '',
-          serviceArea: formData.serviceArea || '',
-          businessHours: formData.businessHours || '',
-          aiTone: formData.aiTone || 'Professional',
-          retellEmail: formData.retellEmail || '',
-          n8nEmail: formData.n8nEmail || '',
-          escalationName: formData.escalationName || '',
-          escalationPhone: formData.escalationPhone || '',
-          notifyEmergency: formData.notifyTeamOnEmergency ? 'YES' : 'NO',
-          smsFollowup: formData.smsFollowupEnabled ? 'YES' : 'NO',
-          autoBooking: formData.autoBookingEnabled ? 'YES' : 'NO',
-          customNotes: formData.customAutomationNotes || '',
-          scenariosCount: (formData.scenarios || []).length,
-          scenariosSummary,
-          summaryText: subResult?.summaryText || `Ring2Rev Onboarding - ${formData.businessName || 'Submission'}`,
-        };
-
-        fetch(sheetsWebhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(sheetPayload),
-        }).catch(() => {});
-      } catch (clientPushErr) {
-        console.warn('Client push note:', clientPushErr);
-      }
-    }
-
-    const finalSubId = subResult?.submissionId || subId;
-    const finalSubDate = subResult?.submittedAt || subDate;
-
-    const summaryText =
-      subResult?.summaryText ||
-      `=====================================================
-RING2REV ONBOARDING SUBMISSION RECORD
-Submission ID: ${finalSubId}
-Submitted At: ${finalSubDate}
-=====================================================
-
-1. BUSINESS INFORMATION
-- Company Name: ${formData.businessName || 'Not specified'}
-- Main Phone: ${formData.mainPhone || 'Not specified'}
-- Primary Contact: ${formData.primaryContactName || 'Not specified'}
-- Primary Email: ${formData.primaryContactEmail || 'Not specified'}
-- Primary Contact Phone: ${formData.primaryContactPhone || 'Not specified'}
-- Service Territory: ${formData.serviceArea || 'Not specified'}
-- Operating Hours: ${formData.businessHours || 'Not specified'}
-
-2. CONVERSATIONAL AI ENGINE
-- Vocal Tone & Cadence: ${formData.aiTone || 'Professional'}
-- Retell AI Email: ${formData.retellEmail || 'Not specified'}
-- Mandatory Phrases: ${formData.alwaysSay || 'None'}
-- Restricted Phrases: ${formData.neverSay || 'None'}
-- Knowledge Website: ${formData.websiteUrl || 'None'}
-- Knowledge Documents: ${(formData.uploadedDocs || []).length} uploaded
-- Configured Scenarios (${(formData.scenarios || []).length}):
-${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.description} -> ${s.responseProtocol}`).join('\n') || '  None'}
-- Escalation: ${formData.escalationName || 'None'} (${formData.escalationPhone || 'None'})
-
-3. INTEGRATION & WORKFLOWS
-- N8N Email: ${formData.n8nEmail || 'Not specified'}
-
-4. AUTONOMOUS RULES & SAFETY
-- Emergency Alerts: ${formData.notifyTeamOnEmergency ? 'Yes' : 'No'}
-- SMS Follow-up: ${formData.smsFollowupEnabled ? 'Yes' : 'No'}
-- Auto Booking: ${formData.autoBookingEnabled ? 'Yes' : 'No'}
-- Directives: ${formData.customAutomationNotes || 'None'}`;
-
-    const submissionItem = {
-      id: finalSubId,
-      submittedAt: finalSubDate,
-      recipientEmails: subResult?.recipientEmails || [formData.primaryContactEmail].filter(Boolean) as string[],
-      data: { ...formData },
-      webhookSent: subResult?.webhookSent || false,
-      summaryText,
-    };
-
-    // Store in browser local storage archive for instant client redundancy
+    // 2. Clear any lingering portal drafts so nothing stays stored in browser
     try {
-      const existingRaw = localStorage.getItem('ring2rev_submissions_history');
-      const existingList = existingRaw ? JSON.parse(existingRaw) : [];
-      const updatedList = [submissionItem, ...existingList.filter((item: any) => item.id !== finalSubId)];
-      localStorage.setItem('ring2rev_submissions_history', JSON.stringify(updatedList));
-    } catch (storageErr) {
-      console.warn('LocalStorage error:', storageErr);
-    }
-
-    // Save to Cloud Firestore database so ALL submissions are permanently synced across every device
-    saveSubmissionToFirestore(submissionItem).catch((fsErr) => {
-      console.warn('Cloud Firestore save note:', fsErr);
-    });
+      localStorage.removeItem(STORAGE_KEY);
+      clearPortalStorage();
+    } catch {}
 
     setFormData((prev) => ({
       ...prev,
       completedSteps: [1, 2, 3, 4, 5],
       isSubmitted: true,
-      lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       submissionResult: {
         submissionId: finalSubId,
         submittedAt: finalSubDate,
-        recipientEmails: submissionItem.recipientEmails,
-        webhookSent: submissionItem.webhookSent,
-        summaryText,
       },
     }));
-
-    // 3. Automatic silent background archive to connected Google Drive Webhook (Zero popups / Zero OAuth for clients)
-    const appsScriptUrl = getStoredAppsScriptUrl();
-    if (appsScriptUrl && appsScriptUrl.trim().length > 0) {
-      try {
-        generateOnboardingPdfBlob(formData, finalSubId, finalSubDate)
-          .then((pdfBlob) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64Data = (reader.result as string)?.split(',')[1];
-              // Format uploadedDocs with base64 data for Drive file upload
-              const uploadedDocsPayload = (formData.uploadedDocs || []).map((doc) => ({
-                name: doc.name,
-                type: doc.type,
-                size: doc.size,
-                base64: doc.dataUrl || doc.url || '',
-              }));
-
-              sendToGoogleAppsScriptWebhook(
-                appsScriptUrl,
-                {
-                  id: finalSubId,
-                  submittedAt: finalSubDate,
-                  formData,
-                  uploadedDocs: uploadedDocsPayload,
-                  kbArticles: formData.kbArticles || [],
-                  businessName: formData.businessName || 'Client',
-                  primaryContactName: formData.primaryContactName || '',
-                  primaryContactEmail: formData.primaryContactEmail || '',
-                },
-                base64Data
-              ).catch((e) => console.warn('Background Drive webhook sync note:', e));
-            };
-            reader.readAsDataURL(pdfBlob);
-          })
-          .catch((pdfErr) => console.warn('PDF generation note:', pdfErr));
-      } catch (scriptErr) {
-        console.warn('Apps script sync note:', scriptErr);
-      }
-    }
 
     setIsSubmitting(false);
     setIsFinishModalOpen(true);
@@ -333,9 +171,10 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
 
   const handleReset = () => {
     localStorage.removeItem(STORAGE_KEY);
+    clearPortalStorage();
     setFormData(INITIAL_STATE);
     setIsSaveExitOpen(false);
-    showToast('Form reset to initial state');
+    showToast('Form cleared');
   };
 
   return (
@@ -352,7 +191,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
         completedSteps={formData.completedSteps}
         onSelectStep={handleSelectStep}
         onSaveAndExit={() => setIsSaveExitOpen(true)}
-        onOpenSubmissions={() => setIsSubmissionsOpen(true)}
       />
 
       {/* Mobile Drawer */}
@@ -403,7 +241,6 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
         <Header
           currentStep={formData.currentStep}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-          onOpenSubmissions={() => setIsSubmissionsOpen(true)}
         />
 
         <main className="flex-1 p-4 md:p-10 lg:p-12 w-full">
@@ -476,13 +313,9 @@ ${(formData.scenarios || []).map((s, i) => `  ${i + 1}. [${s.name}]: ${s.descrip
         formData={formData}
         onRestart={() => {
           setIsFinishModalOpen(false);
+          setFormData(INITIAL_STATE);
           handleSelectStep(1);
         }}
-        onOpenSubmissions={() => setIsSubmissionsOpen(true)}
-      />
-      <SubmissionsModal
-        isOpen={isSubmissionsOpen}
-        onClose={() => setIsSubmissionsOpen(false)}
       />
     </div>
   );
