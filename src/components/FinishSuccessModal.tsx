@@ -135,7 +135,7 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
                   Google Drive Auto-Archive
                 </h4>
                 <p className="text-[10px] text-white/40">
-                  Folder: <span className="text-white/70 font-mono">Ring2Rev Onboarding Records</span>
+                  Folder: <span className="text-white/70 font-mono">{driveResult?.folderName || 'Ring2Rev Onboarding Records'}</span>
                 </p>
               </div>
             </div>
@@ -143,37 +143,41 @@ export const FinishSuccessModal: React.FC<FinishSuccessModalProps> = ({
             {driveResult?.success && (
               <span className="px-2 py-0.5 bg-emerald-500/15 text-emerald-300 text-[10px] font-mono rounded-md border border-emerald-500/30 flex items-center gap-1">
                 <span className="material-symbols-outlined text-[12px]">check</span>
-                Uploaded
+                Synced to Drive
               </span>
             )}
           </div>
 
           {driveResult?.success ? (
-            <div className="mt-2.5 pt-2.5 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="text-[11px] text-emerald-300/90 truncate flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]">task</span>
-                <span className="truncate">{driveResult.fileName}</span>
+            <div className="mt-2.5 pt-2.5 border-t border-white/5 space-y-2">
+              <div className="text-[11px] text-emerald-300/90 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="material-symbols-outlined text-[14px]">task</span>
+                  <span className="truncate">
+                    PDF Record &amp; {driveResult.kbDocsCount || 0} Knowledge Doc(s) uploaded
+                  </span>
+                </div>
+                {driveResult.folderLink && (
+                  <a
+                    href={driveResult.folderLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center justify-center gap-1 border border-emerald-500/40 transition-all shrink-0"
+                  >
+                    <span>Open Drive Folder</span>
+                    <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                )}
               </div>
-              {driveResult.webViewLink && (
-                <a
-                  href={driveResult.webViewLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center justify-center gap-1 border border-emerald-500/40 transition-all shrink-0"
-                >
-                  <span>Open in Drive</span>
-                  <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                </a>
-              )}
             </div>
           ) : (
             <div className="mt-2.5 pt-2.5 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p className="text-[11px] text-white/50 font-light">
                 {isUploadingToDrive
-                  ? 'Authorizing and uploading PDF to your Google Drive...'
+                  ? 'Authorizing and syncing PDF & Knowledge Base docs to your Google Drive...'
                   : driveError
                   ? driveError
-                  : 'Automatically saves a copy to your Google Drive folder.'}
+                  : 'Automatically syncs PDF summary & all Knowledge Base files to your Drive folder.'}
               </p>
 
               <button

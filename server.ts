@@ -6,8 +6,17 @@ import { createServer as createViteServer } from 'vite';
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Helper to safely extract base64 payload from any Data URL
+function extractBase64Payload(dataUrl: string): string {
+  if (!dataUrl || typeof dataUrl !== 'string') return '';
+  if (dataUrl.includes('base64,')) {
+    return dataUrl.substring(dataUrl.indexOf('base64,') + 7);
+  }
+  return dataUrl.trim();
+}
 
 // In-memory / file persistent storage for submissions
 interface SubmissionRecord {
@@ -288,8 +297,12 @@ app.post('/api/upload', (req, res) => {
     const filename = `${docId}_${safeName}`;
     const filePath = path.join(UPLOADS_DIR, filename);
 
-    // Extract base64 part
-    const base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    // Extract base64 part safely
+    const base64Data = extractBase64Payload(dataUrl);
+    if (!base64Data) {
+      return res.status(400).json({ success: false, error: 'Invalid Base64 payload' });
+    }
+
     fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
 
     const host = req.get('host') || 'localhost:3000';
@@ -315,15 +328,54 @@ app.post('/api/upload', (req, res) => {
 app.get('/api/uploads/:filename', (req, res) => {
   try {
     const safeFilename = path.basename(req.params.filename);
-    const filePath = path.join(UPLOADS_DIR, safeFilename);
+    let filePath = path.join(UPLOADS_DIR, safeFilename);
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).send('File not found');
+      // Try URL-decoded name
+      const decoded = decodeURIComponent(req.params.filename);
+      const safeDecoded = path.basename(decoded);
+      filePath = path.join(UPLOADS_DIR, safeDecoded);
+      
+      if (!fs.existsSync(filePath)) {
+        // Match prefix docId in uploads directory
+        const docIdPrefix = safeFilename.split('_')[0] + '_' + safeFilename.split('_')[1];
+        if (fs.existsSync(UPLOADS_DIR)) {
+          const files = fs.readdirSync(UPLOADS_DIR);
+          const matched = files.find(f => f.startsWith(docIdPrefix) || f.endsWith(safeFilename));
+          if (matched) {
+            filePath = path.join(UPLOADS_DIR, matched);
+          }
+        }
+      }
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('File not found in storage.');
     }
 
     // Determine clean original file name
-    const originalName = safeFilename.replace(/^doc_[^_]+_/, '');
-    res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+    const base = path.basename(filePath);
+    const originalName = base.replace(/^doc_[^_]+(_[a-z0-9]+)?_/, '') || base;
+    
+    // Auto-detect Content-Type based on extension
+    const ext = path.extname(originalName).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain; charset=utf-8',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.csv': 'text/csv; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+    };
+
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName)}"`);
     return res.sendFile(filePath);
   } catch (err: any) {
     return res.status(500).send('Error retrieving file: ' + err.message);
@@ -365,11 +417,13 @@ app.post('/api/submit', async (req, res) => {
 
         let fileUrl = doc.url || `${baseUrl}/api/uploads/${filename}`;
 
-        if (doc.dataUrl && typeof doc.dataUrl === 'string' && doc.dataUrl.includes('base64')) {
+        if (doc.dataUrl && typeof doc.dataUrl === 'string') {
           try {
-            const base64Data = doc.dataUrl.replace(/^data:[^;]+;base64,/, '');
-            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-            fileUrl = `${baseUrl}/api/uploads/${filename}`;
+            const base64Data = extractBase64Payload(doc.dataUrl);
+            if (base64Data) {
+              fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+              fileUrl = `${baseUrl}/api/uploads/${filename}`;
+            }
           } catch (fileErr) {
             console.error('Error saving embedded doc:', fileErr);
           }
@@ -382,6 +436,7 @@ app.post('/api/submit', async (req, res) => {
           type: doc.type,
           uploadedAt: doc.uploadedAt || timestamp,
           url: fileUrl,
+          dataUrl: doc.dataUrl, // Preserved for direct client download and Drive sync
         });
 
         docLinks.push(`${doc.name}: ${fileUrl}`);

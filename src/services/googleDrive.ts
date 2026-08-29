@@ -1,16 +1,28 @@
 import { jsPDF } from 'jspdf';
-import { OnboardingState } from '../types';
+import { OnboardingState, UploadedDoc } from '../types';
 import { generateOnboardingPDF } from '../utils/pdfGenerator';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const FOLDER_NAME = 'Ring2Rev Onboarding Records';
+const ROOT_FOLDER_NAME = 'Ring2Rev Onboarding Records';
+
+export interface DriveUploadedItem {
+  name: string;
+  id: string;
+  webViewLink?: string;
+  size?: number;
+  type?: string;
+}
 
 export interface DriveUploadResult {
   success: boolean;
   fileId?: string;
   fileName?: string;
   webViewLink?: string;
+  folderId?: string;
   folderName?: string;
+  folderLink?: string;
+  kbDocsCount?: number;
+  uploadedKbDocs?: DriveUploadedItem[];
   error?: string;
 }
 
@@ -80,10 +92,8 @@ export async function requestDriveAccessToken(): Promise<string> {
   }
 
   return new Promise((resolve, reject) => {
-    // Check if google.accounts.oauth2 is loaded
     const google = (window as any).google;
     if (!google || !google.accounts || !google.accounts.oauth2) {
-      // Wait for script to load or reject with clear message
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
@@ -135,14 +145,22 @@ function initClient(
 }
 
 /**
- * Find or create a dedicated folder in the user's Google Drive
+ * Find or create a folder in Google Drive
  */
-async function getOrCreateFolder(accessToken: string, folderName: string): Promise<string | null> {
+async function getOrCreateFolder(
+  accessToken: string,
+  folderName: string,
+  parentId?: string
+): Promise<{ id: string; webViewLink?: string } | null> {
   try {
-    // Search existing folder
+    let query = `name='${folderName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    if (parentId) {
+      query += ` and '${parentId}' in parents`;
+    }
+
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-      `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
-    )}&fields=files(id,name)`;
+      query
+    )}&fields=files(id,name,webViewLink)`;
 
     const searchRes = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -151,35 +169,127 @@ async function getOrCreateFolder(accessToken: string, folderName: string): Promi
     if (searchRes.ok) {
       const searchData = await searchRes.json();
       if (searchData.files && searchData.files.length > 0) {
-        return searchData.files[0].id;
+        return {
+          id: searchData.files[0].id,
+          webViewLink: searchData.files[0].webViewLink,
+        };
       }
     }
 
-    // Create folder if not found
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    // Create folder
+    const createBody: any = {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+    };
+    if (parentId) {
+      createBody.parents = [parentId];
+    }
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-      }),
+      body: JSON.stringify(createBody),
     });
 
     if (createRes.ok) {
       const createData = await createRes.json();
-      return createData.id;
+      return {
+        id: createData.id,
+        webViewLink: createData.webViewLink || `https://drive.google.com/drive/folders/${createData.id}`,
+      };
     }
   } catch (err) {
-    console.warn('Google Drive folder creation/check note:', err);
+    console.warn('Drive folder creation note:', err);
   }
   return null;
 }
 
 /**
- * Upload an onboarding PDF to Google Drive
+ * Upload a single binary or text file to Google Drive via multipart upload
+ */
+async function uploadRawFileToDrive({
+  token,
+  name,
+  mimeType,
+  base64Data,
+  folderId,
+  description,
+}: {
+  token: string;
+  name: string;
+  mimeType: string;
+  base64Data: string;
+  folderId?: string;
+  description?: string;
+}): Promise<DriveUploadedItem | null> {
+  try {
+    const boundary = '-------ring2rev_gdrive_upload_' + Math.random().toString(36).substring(2);
+    const delimiter = `\r\n--${boundary}\r\n`;
+    const closeDelimiter = `\r\n--${boundary}--`;
+
+    const metadata: any = {
+      name,
+      mimeType: mimeType || 'application/octet-stream',
+      description: description || `Uploaded via Ring2Rev Onboarding Portal`,
+    };
+
+    if (folderId) {
+      metadata.parents = [folderId];
+    }
+
+    const cleanBase64 = base64Data.includes('base64,')
+      ? base64Data.substring(base64Data.indexOf('base64,') + 7)
+      : base64Data;
+
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) +
+      delimiter +
+      `Content-Type: ${mimeType || 'application/octet-stream'}\r\n` +
+      'Content-Transfer-Encoding: base64\r\n\r\n' +
+      cleanBase64 +
+      closeDelimiter;
+
+    const uploadUrl =
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,size,mimeType';
+
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartRequestBody,
+    });
+
+    if (response.ok) {
+      const fileData = await response.json();
+      return {
+        id: fileData.id,
+        name: fileData.name,
+        webViewLink: fileData.webViewLink || `https://drive.google.com/file/d/${fileData.id}/view`,
+        size: Number(fileData.size) || 0,
+        type: fileData.mimeType,
+      };
+    } else {
+      const errText = await response.text();
+      console.warn(`[Drive] File upload failed for ${name} (${response.status}):`, errText);
+    }
+  } catch (err) {
+    console.error(`[Drive] Exception uploading ${name}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Upload the full Onboarding Submission:
+ * 1. Formatted Specification PDF
+ * 2. All Knowledge Base documents provided by the client
+ * Directly into organized Google Drive folders!
  */
 export async function uploadOnboardingPdfToDrive({
   formData,
@@ -198,93 +308,108 @@ export async function uploadOnboardingPdfToDrive({
       return { success: false, error: 'Google Drive authorization token required.' };
     }
 
-    // 1. Generate the PDF instance
+    const safeBusinessName = (formData.businessName || 'Client')
+      .replace(/[^a-zA-Z0-9 _-]/g, '')
+      .trim()
+      .slice(0, 35) || 'Client';
+    const subRef = submissionId || `R2R-${Date.now().toString(36).toUpperCase()}`;
+
+    // 1. Root Archive Folder: "Ring2Rev Onboarding Records"
+    const rootFolder = await getOrCreateFolder(token, ROOT_FOLDER_NAME);
+    const rootFolderId = rootFolder?.id;
+
+    // 2. Client Submission Dedicated Folder: "BusinessName - Ref"
+    const clientFolderName = `${safeBusinessName} - ${subRef}`;
+    const clientFolder = await getOrCreateFolder(token, clientFolderName, rootFolderId);
+    const targetFolderId = clientFolder?.id || rootFolderId;
+    const folderLink =
+      clientFolder?.webViewLink ||
+      (clientFolder?.id ? `https://drive.google.com/drive/folders/${clientFolder.id}` : undefined);
+
+    // 3. Generate & Upload Onboarding PDF
     const doc: jsPDF = generateOnboardingPDF({
       formData,
       submissionId,
       submittedAt,
     });
-
-    // 2. Convert to Base64
     const dataUri = doc.output('datauristring');
-    const base64Data = dataUri.split(',')[1];
-    if (!base64Data) {
-      return { success: false, error: 'Failed to generate PDF byte stream.' };
-    }
+    const pdfBase64 = dataUri.split(',')[1];
+    const pdfFileName = `Ring2Rev_Onboarding_Summary_${safeBusinessName.replace(/\s+/g, '_')}_${subRef}.pdf`;
 
-    const safeBusinessName = (formData.businessName || 'Client')
-      .replace(/[^a-zA-Z0-9_-]/g, '_')
-      .slice(0, 30);
-    const subRef = submissionId || `R2R-${Date.now().toString(36).toUpperCase()}`;
-    const fileName = `Ring2Rev_Onboarding_Summary_${safeBusinessName}_${subRef}.pdf`;
-
-    // 3. Find or create dedicated folder
-    const folderId = await getOrCreateFolder(token, FOLDER_NAME);
-
-    // 4. Perform Multipart Upload
-    const boundary = '-------ring2rev_multipart_boundary_314159';
-    const delimiter = `\r\n--${boundary}\r\n`;
-    const closeDelimiter = `\r\n--${boundary}--`;
-
-    const metadata: any = {
-      name: fileName,
+    const uploadedPdf = await uploadRawFileToDrive({
+      token,
+      name: pdfFileName,
       mimeType: 'application/pdf',
-      description: `Ring2Rev Client Onboarding Specification Record for ${formData.businessName || 'Client'} (ID: ${subRef})`,
-    };
-
-    if (folderId) {
-      metadata.parents = [folderId];
-    }
-
-    const multipartRequestBody =
-      delimiter +
-      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-      JSON.stringify(metadata) +
-      delimiter +
-      'Content-Type: application/pdf\r\n' +
-      'Content-Transfer-Encoding: base64\r\n\r\n' +
-      base64Data +
-      closeDelimiter;
-
-    const uploadUrl =
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink,parents';
-
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-      },
-      body: multipartRequestBody,
+      base64Data: pdfBase64,
+      folderId: targetFolderId,
+      description: `Ring2Rev Onboarding Specification Record for ${formData.businessName || 'Client'} (ID: ${subRef})`,
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      // If 401 Unauthorized, clear cached token
-      if (response.status === 401) {
-        clearDriveToken();
-      }
-      return {
-        success: false,
-        error: `Google Drive Upload failed (${response.status}): ${errText}`,
-      };
+    if (!uploadedPdf) {
+      return { success: false, error: 'Failed to upload onboarding summary PDF to Google Drive.' };
     }
 
-    const fileData = await response.json();
-    const webViewLink =
-      fileData.webViewLink || `https://drive.google.com/file/d/${fileData.id}/view`;
+    // 4. Upload all Knowledge Base documents attached by client
+    const uploadedKbDocs: DriveUploadedItem[] = [];
+    const kbDocs: UploadedDoc[] = formData.uploadedDocs || [];
 
-    console.log('[Google Drive] Successfully uploaded PDF:', fileData.name, webViewLink);
+    if (kbDocs.length > 0) {
+      // Create subfolder for Knowledge Base if multiple docs
+      const kbFolder = await getOrCreateFolder(token, 'Knowledge Base Assets', targetFolderId);
+      const kbFolderId = kbFolder?.id || targetFolderId;
+
+      for (const kbDoc of kbDocs) {
+        let base64Content = '';
+        if (kbDoc.dataUrl && typeof kbDoc.dataUrl === 'string') {
+          base64Content = kbDoc.dataUrl;
+        } else if (kbDoc.url) {
+          // If only URL is present, fetch server copy and convert to base64
+          try {
+            const fetchRes = await fetch(kbDoc.url);
+            if (fetchRes.ok) {
+              const blob = await fetchRes.blob();
+              base64Content = await new Promise<string>((res) => {
+                const reader = new FileReader();
+                reader.onload = () => res(reader.result as string);
+                reader.onerror = () => res('');
+                reader.readAsDataURL(blob);
+              });
+            }
+          } catch (fetchErr) {
+            console.warn(`Could not fetch server document ${kbDoc.name}:`, fetchErr);
+          }
+        }
+
+        if (base64Content) {
+          const kbUploaded = await uploadRawFileToDrive({
+            token,
+            name: kbDoc.name || 'knowledge_base_doc',
+            mimeType: kbDoc.type || 'application/octet-stream',
+            base64Data: base64Content,
+            folderId: kbFolderId,
+            description: `Knowledge Base asset for ${formData.businessName || 'Client'} - ${kbDoc.name}`,
+          });
+
+          if (kbUploaded) {
+            uploadedKbDocs.push(kbUploaded);
+          }
+        }
+      }
+    }
 
     return {
       success: true,
-      fileId: fileData.id,
-      fileName: fileData.name,
-      webViewLink,
-      folderName: FOLDER_NAME,
+      fileId: uploadedPdf.id,
+      fileName: uploadedPdf.name,
+      webViewLink: uploadedPdf.webViewLink,
+      folderId: targetFolderId,
+      folderName: clientFolderName,
+      folderLink,
+      kbDocsCount: uploadedKbDocs.length,
+      uploadedKbDocs,
     };
   } catch (err: any) {
-    console.error('[Google Drive] Upload exception:', err);
+    console.error('[Google Drive] Master upload error:', err);
     return {
       success: false,
       error: err.message || 'An unexpected error occurred during Google Drive upload.',

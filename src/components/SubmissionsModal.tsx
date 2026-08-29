@@ -623,8 +623,10 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                         className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1.5 border border-emerald-500/40 transition-all font-medium"
                         title="View in Google Drive"
                       >
-                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                        In Drive
+                        <span className="material-symbols-outlined text-[16px]">
+                          {driveUploadResults[selectedSubmission.id]?.folderLink ? 'folder_shared' : 'open_in_new'}
+                        </span>
+                        {driveUploadResults[selectedSubmission.id]?.folderLink ? 'Drive Folder' : 'In Drive'}
                       </a>
                     ) : (
                       <button
@@ -650,7 +652,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                         }}
                         disabled={uploadingDriveId === selectedSubmission?.id}
                         className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-200 text-xs flex items-center gap-1.5 border border-emerald-500/20 transition-all font-medium disabled:opacity-50"
-                        title="Save PDF directly to your Google Drive"
+                        title="Save PDF and all Knowledge Base assets directly to your Google Drive"
                       >
                         <span className="material-symbols-outlined text-[16px]">
                           {uploadingDriveId === selectedSubmission?.id ? 'progress_activity' : 'add_to_drive'}
@@ -706,23 +708,37 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                           folder_open
                         </span>
                         <span className="text-xs font-semibold text-white">
-                          Uploaded Knowledge Base Documents ({(selectedSubmission.data?.uploadedDocs || []).length})
+                          Knowledge Base Documents ({(selectedSubmission.data?.uploadedDocs || []).length})
                         </span>
                       </div>
-                      <span className="text-[10px] text-white/40 font-mono">Saved to Storage</span>
+                      <span className="text-[10px] text-white/40 font-mono">
+                        {driveUploadResults[selectedSubmission.id]?.success
+                          ? `✓ Synced to Drive`
+                          : 'Saved to Storage'}
+                      </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(selectedSubmission.data.uploadedDocs || []).map((doc: any, idx: number) => {
-                        const fileHref = doc.url || `/api/uploads/${doc.id}_${doc.name}`;
+                        const safeName = (doc.name || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+                        const fileHref = doc.url || `/api/uploads/${doc.id}_${safeName}`;
                         return (
-                          <a
+                          <button
                             key={doc.id || idx}
-                            href={fileHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            download={doc.name}
-                            className="flex items-center justify-between p-2.5 rounded-lg bg-[#0f0f0f] border border-white/5 hover:border-[#c5a47e] text-xs transition-all group"
+                            type="button"
+                            onClick={() => {
+                              if (doc.dataUrl && typeof doc.dataUrl === 'string' && doc.dataUrl.includes('base64')) {
+                                const link = document.createElement('a');
+                                link.href = doc.dataUrl;
+                                link.download = doc.name || 'document';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              } else {
+                                window.open(fileHref, '_blank');
+                              }
+                            }}
+                            className="flex items-center justify-between p-2.5 rounded-lg bg-[#0f0f0f] border border-white/5 hover:border-[#c5a47e] text-xs transition-all group w-full text-left cursor-pointer"
                           >
                             <div className="flex items-center gap-2 truncate">
                               <span className="material-symbols-outlined text-[#c5a47e] text-[16px]">
@@ -740,7 +756,7 @@ export const SubmissionsModal: React.FC<SubmissionsModalProps> = ({ isOpen, onCl
                             <span className="material-symbols-outlined text-[16px] text-white/40 group-hover:text-[#c5a47e] shrink-0">
                               download
                             </span>
-                          </a>
+                          </button>
                         );
                       })}
                     </div>
