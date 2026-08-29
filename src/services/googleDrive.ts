@@ -479,8 +479,9 @@ export { generateOnboardingPdfBlob } from '../utils/pdfGenerator';
  * without any Google OAuth login requirement.
  */
 export const APPS_SCRIPT_STORAGE_KEY = 'ring2rev_apps_script_url';
+export const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzGIjum7RTnDXtP8OoCij5pEcoBVexAYbxyPddZQD8OmW0K1JM-OXqaUZDEHH0NNPjUpw/exec';
 
-let inMemoryGlobalAppsScriptUrl = '';
+let inMemoryGlobalAppsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
 
 export function getStoredAppsScriptUrl(): string {
   try {
@@ -490,7 +491,7 @@ export function getStoredAppsScriptUrl(): string {
   return (
     inMemoryGlobalAppsScriptUrl ||
     (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
-    ''
+    DEFAULT_APPS_SCRIPT_URL
   );
 }
 

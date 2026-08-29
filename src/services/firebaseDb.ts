@@ -69,6 +69,7 @@ export async function saveSubmissionToFirestore(submission: FirestoreSubmissionR
 
 const CONFIG_COLLECTION = 'system_config';
 const CONFIG_DOC_ID = 'global_settings';
+const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzGIjum7RTnDXtP8OoCij5pEcoBVexAYbxyPddZQD8OmW0K1JM-OXqaUZDEHH0NNPjUpw/exec';
 
 /**
  * Fetch global config (e.g. Google Drive Apps Script URL) shared across all devices & clients
@@ -79,12 +80,12 @@ export async function fetchGlobalDriveWebhookUrl(): Promise<string> {
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
       const data = snapshot.data();
-      return data?.googleAppsScriptUrl || '';
+      return data?.googleAppsScriptUrl || DEFAULT_URL;
     }
   } catch (err) {
     console.warn('[Firestore] Could not load global drive config:', err);
   }
-  return '';
+  return DEFAULT_URL;
 }
 
 /**
